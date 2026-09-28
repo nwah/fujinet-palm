@@ -166,7 +166,10 @@ NetIPAddr FnNLB_AddrAToIN(UInt16 refNum, Char *a)
     NetIPAddr addr;
 
     (void)refNum;
+    /* Not a dotted quad: return -1 (INADDR_NONE) like inet_addr. Apps such
+     * as Mocha Telnet only fall back to GetHostByName on -1; returning 0
+     * made them connect to 0.0.0.0. */
     if (a == NULL || !FnNLParseDotted(a, &addr))
-        return 0;
+        return (NetIPAddr)0xFFFFFFFFUL;
     return addr;
 }
