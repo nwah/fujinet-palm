@@ -411,6 +411,10 @@ static void DoConnect(FormType *frm)
         fuji_palmos_close();
     }
 
+    /* Save the link on every Connect, not only when a popup changes: the
+     * other fujinet-lib apps open whatever the preference says, and a
+     * never-saved preference falls back to "Serial Library". */
+    SaveLinkPref();
     if (!fuji_palmos_open((char *)kLibNames[gLinkIdx], kBauds[gBaudIdx])) {
         ShowError("Connect failed", "");
         gSsid[0] = '\0';
@@ -1279,6 +1283,7 @@ UInt32 PilotMain(UInt16 cmd, MemPtr cmdPBP, UInt16 launchFlags)
     }
 
     LoadLinkPref();
+    SaveLinkPref(); /* make sure the defaults exist for the other apps */
     FrmGotoForm(MainForm);
 
     do {
