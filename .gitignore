@@ -1,0 +1,17 @@
+build/
+*.o
+/host/fnhost
+/host/tests/test_core
+/run/SD/
+/run/data/
+*.prc
+*.bin
+bin.stamp
+/palm/apps/hello/hello
+/palm/apps/fnlink/fnlink
+/palm/apps/mastodon/mastodon
+/palm/apps/mastodon/test_htmlclean
+compat_include/
+/tools/node_modules/
+/tools/package-lock.json
+/tools/palm-sync/

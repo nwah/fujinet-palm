@@ -1,0 +1,10 @@
+#include "hello_rsc.h"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "FujiNet Hello"
+    LABEL "Toolchain OK" AUTOID AT (CENTER 70) FONT 1
+END
+
+VERSION ID 1 "0.1"

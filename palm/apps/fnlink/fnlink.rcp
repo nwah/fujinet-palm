@@ -1,0 +1,19 @@
+#include "fnlink_rsc.h"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "FnLink"
+
+    PUSHBUTTON "USB"    ID LibUsbButton    AT (4   16 48 12) GROUP 1 FONT 0
+    PUSHBUTTON "UART"   ID LibUartButton   AT (54  16 48 12) GROUP 1 FONT 0
+    PUSHBUTTON "Serial" ID LibSerialButton AT (104 16 50 12) GROUP 1 FONT 0
+
+    BUTTON "Open"  ID OpenButton  AT (4   30 36 12) FONT 0
+    BUTTON "Close" ID CloseButton AT (42  30 40 12) FONT 0
+    BUTTON "Echo"  ID EchoButton  AT (84  30 36 12) FONT 0
+    BUTTON "x20"   ID X20Button   AT (122 30 30 12) FONT 0
+    BUTTON "Fuji"  ID FujiButton  AT (4  146 40 12) FONT 0
+END
+
+VERSION ID 1 "0.1"

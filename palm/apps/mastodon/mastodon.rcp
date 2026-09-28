@@ -1,0 +1,21 @@
+#include "mastodon_rsc.h"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Mastodon"
+
+    FIELD ID ContentField AT (4 43 143 80)
+        NONEDITABLE
+        MULTIPLELINES
+        HASSCROLLBAR
+        MAXCHARS 2047
+        FONT 0
+
+    SCROLLBAR ID ContentScrollBar AT (148 43 7 80)
+        MIN 0 MAX 0 VALUE 0 PAGESIZE 1
+
+    BUTTON "Refresh" ID RefreshButton AT (106 138 48 14) FONT 0
+END
+
+VERSION ID 1 "0.1"
