@@ -1,0 +1,124 @@
+#include "fujiconfig_rsc.h"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "FujiNet"
+
+    LABEL "Link:" ID 1 AT (4 18) FONT 0
+    POPUPTRIGGER "USB Library" ID LinkPopTrigger AT (34 16 90 12) LEFTANCHOR FONT 0
+    POPUPLIST ID LinkPopTrigger LinkList
+    LIST "USB Library" "BuiltIn SerLib" "Serial Library" ID LinkList AT (34 16 100 34) NONUSABLE FONT 0
+
+    LABEL "Baud:" ID 2 AT (4 32) FONT 0
+    POPUPTRIGGER "115200" ID BaudPopTrigger AT (34 30 50 12) LEFTANCHOR FONT 0
+    POPUPLIST ID BaudPopTrigger BaudList
+    LIST "115200" "57600" "38400" "19200" "9600" ID BaudList AT (34 30 50 55) NONUSABLE FONT 0
+
+    BUTTON "Connect" ID ConnectButton AT (4  46 36 14) FONT 0
+    BUTTON "WiFi"    ID WifiButton    AT (42 46 34 14) FONT 0
+    BUTTON "Hosts"   ID HostsButton   AT (78 46 34 14) FONT 0
+    BUTTON "Browse"  ID BrowseButton  AT (114 46 42 14) FONT 0
+END
+
+FORM ID WifiForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "WiFi"
+
+    BUTTON "Scan" ID WifiScanButton AT (4 16 40 14) FONT 0
+
+    LIST ID WifiList AT (4 34 146 96) NONUSABLE FONT 0
+    SCROLLBAR ID WifiScrollBar AT (150 34 7 96) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
+
+    BUTTON "Done" ID WifiDoneButton AT (114 142 40 14) FONT 0
+END
+
+FORM ID WifiPasswordDialog AT (6 44 148 72)
+FRAME
+MODAL
+SAVEBEHIND
+BEGIN
+    TITLE "Connect"
+
+    LABEL "" ID WifiSsidLabel AT (6 18) FONT 0
+    FIELD ID WifiPasswordField AT (6 32 136 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 63 FONT 0
+
+    BUTTON "Connect" ID WifiConnectButton AT (6  50 60 14) FONT 0
+    BUTTON "Cancel"  ID WifiCancelButton  AT (76 50 60 14) FONT 0
+END
+
+FORM ID HostsForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Host Slots"
+
+    LIST ID HostsList AT (4 16 152 114) NONUSABLE FONT 0
+
+    BUTTON "Browse" ID HostsBrowseButton AT (4   140 60 14) FONT 0
+    BUTTON "Done"   ID HostsDoneButton   AT (114 140 40 14) FONT 0
+END
+
+FORM ID HostEditDialog AT (6 54 148 60)
+FRAME
+MODAL
+SAVEBEHIND
+BEGIN
+    TITLE "Edit Host Slot"
+
+    FIELD ID HostEditField AT (6 20 136 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 31 FONT 0
+
+    BUTTON "OK"     ID HostEditOkButton     AT (6  38 60 14) FONT 0
+    BUTTON "Cancel" ID HostEditCancelButton AT (76 38 60 14) FONT 0
+END
+
+FORM ID BrowseForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Browse"
+
+    LIST ID BrowseList AT (4 16 146 122) NONUSABLE FONT 0
+    SCROLLBAR ID BrowseScrollBar AT (150 16 7 122) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
+
+    BUTTON "Done" ID BrowseDoneButton AT (114 142 40 14) FONT 0
+END
+
+FORM ID InstallConfirmDialog AT (6 50 148 64)
+FRAME
+MODAL
+SAVEBEHIND
+BEGIN
+    TITLE "Install"
+
+    LABEL "" ID InstallConfirmLabel AT (6 18) FONT 0
+
+    BUTTON "Install" ID InstallInstallButton AT (4  40 44 14) FONT 0
+    BUTTON "Run"     ID InstallRunButton     AT (52 40 40 14) FONT 0
+    BUTTON "Cancel"  ID InstallCancelButton  AT (96 40 38 14) FONT 0
+END
+
+FORM ID InstallForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Installing"
+
+    BUTTON "Done" ID InstallDoneButton AT (114 142 40 14) FONT 0
+END
+
+ALERT ID GeneralAlert
+ERROR
+BEGIN
+    TITLE "FujiConfig"
+    MESSAGE "^1\n\nerror: ^2 (0x^3)"
+    BUTTONS "OK"
+END
+
+ALERT ID InfoAlert
+INFORMATION
+BEGIN
+    TITLE "FujiConfig"
+    MESSAGE "^1"
+    BUTTONS "OK"
+END
+
+VERSION ID 1 "0.1"

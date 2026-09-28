@@ -7,6 +7,45 @@
 #include "transport_ser.h"
 #include <SerialMgrOld.h>
 
+/* HsExtKeyboardEnable(): Handspring AN-09. In a serial (non-USB) cradle, the
+ * keyboard daemon holds "BuiltIn SerLib"; calling this with `enable` false
+ * before SerOpen releases it (no need to re-enable afterwards).
+ *
+ * The PalmOne SDK's 68K/System/HsExt.h declares the sibling Hs* trap calls
+ * with this SYS_SEL_TRAP(sysTrapHsSelector, hsSelXxx) pattern -- an ordinary
+ * numbered system trap (sysTrapHsSelector, aka sysTrapOEMDispatch, 0xA349)
+ * whose sub-function is chosen by a 16-bit selector word the caller pushes
+ * on the stack first -- but it doesn't declare this one selector, so the
+ * macro (from HsExtTraps.h/HsExt.h, gcc >= 2.95 form) and the two constants
+ * (from HsExtTraps.h) are reproduced locally instead of including those
+ * headers. sysDispatchTrapNum (15, the fixed "trap #15" that dispatches
+ * every numbered Palm OS system trap by a following inline trap-number
+ * word) comes from PalmTypes.h via <PalmOS.h>, already included above. */
+#ifndef _Str
+#define _Str(X) #X
+#endif
+#define HSEXT_SYS_TRAP_HS_SELECTOR      0xA349  /* sysTrapHsSelector == sysTrapOEMDispatch */
+#define HSEXT_SEL_EXT_KEYBOARD_ENABLE   0x5     /* hsSelExtKeyboardEnable */
+
+/* Two macro levels, exactly like HsExt.h's own
+ * _HS_OS_CALL_WITH_UNPOPPED_16BIT_SELECTOR/SYS_SEL_TRAP pair: `table`
+ * (sysDispatchTrapNum) must be macro-expanded to "15" as an ORDINARY
+ * argument of HSEXT_CALLSEQ (whose own body only hands it to _Str(), never
+ * stringizing it directly) before _Str() stringizes it -- collapsing this
+ * into one macro that calls _Str(sysDispatchTrapNum) directly would
+ * stringize the literal identifier instead, since _Str's own parameter is
+ * `#`-prefixed and so never pre-expands its argument. */
+#define HSEXT_CALLSEQ(table, vector, selector) \
+    __attribute__ ((__callseq__ ( \
+        "move.w #" _Str(selector) ",-(%%sp); " \
+        "trap #" _Str(table) "; dc.w " _Str(vector))))
+
+#define HSEXT_SYS_SEL_TRAP(trapNum, selector) \
+    HSEXT_CALLSEQ(sysDispatchTrapNum, trapNum, selector)
+
+Err HsExtKeyboardEnable(Boolean enable)
+    HSEXT_SYS_SEL_TRAP(HSEXT_SYS_TRAP_HS_SELECTOR, HSEXT_SEL_EXT_KEYBOARD_ENABLE);
+
 #define FN_SER_RX_BUF_SIZE 4096uL
 
 /* Known shared-library names and, where verified (Handspring AN-09), the
@@ -76,6 +115,20 @@ Err fn_ser_open(FnSerPort *p, const char *libName, UInt32 baud)
             creator = kSerLibs[i].creator;
             break;
         }
+    }
+
+    /* Handspring AN-09: in a serial cradle, "BuiltIn SerLib" (and anything
+     * redirected onto it, e.g. "Serial Library") is held by the keyboard
+     * daemon until this is called with false. Not needed for "USB Library"
+     * (a different bridge, not backed by the UART the daemon watches), and
+     * harmless to skip if this ROM has no Handspring extensions at all. No
+     * need to re-enable after close (see HsExtKeyboardEnable comment
+     * above). */
+    if (StrCompare(libName, "USB Library") != 0) {
+        UInt32 hsExtVersion;
+
+        if (FtrGet('hsEx', 0, &hsExtVersion) == errNone)
+            HsExtKeyboardEnable(false);
     }
 
     err = SysLibFind(libName, &refNum);

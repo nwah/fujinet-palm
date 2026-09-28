@@ -12,6 +12,7 @@ bin.stamp
 /palm/apps/fnlink/fnlink
 /palm/apps/mastodon/mastodon
 /palm/apps/mastodon/test_htmlclean
+/palm/apps/fujiconfig/fujiconfig
 compat_include/
 /tools/node_modules/
 /tools/package-lock.json

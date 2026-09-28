@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "fujinet-fuji.h"
 #include "fujinet-network.h"
@@ -268,11 +269,304 @@ static int test_json(void)
   return rc;
 }
 
+/* ------------------------------------------------------------------ */
+/* FujiConfig call-sequence exercises: every fujinet-lib call FujiConfig
+ * (palm/apps/fujiconfig) makes, run against the real library code the app
+ * links (common/ sources + bus/palmos/fujinet-bus-palmos.c) and a live
+ * fujinet-pc, before trusting any of it on the Palm OS side. Uses host
+ * slot 0 ("SD", see run/fnconfig.ini) and the test file this repo's
+ * docs/protocol.md-adjacent setup places at run/SD/palm/hello.prc (copied
+ * from palm/apps/hello/hello.prc -- see host/Makefile's fnlib-test-run or
+ * the FujiConfig build notes for how it gets there; if absent,
+ * test_install_read() reports it and fails rather than hanging).
+ * ------------------------------------------------------------------ */
+
+/* run/SD/palm/hello.prc's path relative to this binary's cwd (host/, per
+ * host/Makefile's fnlib-test-run target: `./$(FNLIB_BUILD)/fnlib-test`). */
+#define TEST_PRC_DISK_PATH "../run/SD/palm/hello.prc"
+#define TEST_PRC_DEVICESPEC "N:SD:/palm/hello.prc"
+
+static int test_host_slots(void)
+{
+  HostSlot slots[8];
+  int i;
+
+  memset(slots, 0, sizeof(slots));
+  if (!fuji_get_host_slots(slots, 8)) {
+    fprintf(stderr, "fuji_get_host_slots failed (last_error=%u)\n",
+            (unsigned) fuji_palmos_last_error());
+    return 1;
+  }
+
+  printf("host slots:\n");
+  for (i = 0; i < 8; i++) {
+    if (slots[i][0] == 0) {
+      printf("  %d: (empty)\n", i);
+    } else {
+      char buf[33];
+      memcpy(buf, slots[i], 32);
+      buf[32] = '\0';
+      printf("  %d: %s\n", i, buf);
+    }
+  }
+
+  /* Slot 0 must be "SD" for test_directory_listing()/test_install_read()
+   * below to mean anything -- confirmed against run/fnconfig.ini's
+   * [Host1] type=SD name=SD. */
+  if (slots[0][0] == 0 || strncmp((char *) slots[0], "SD", 2) != 0) {
+    fprintf(stderr, "expected host slot 0 == \"SD\", got \"%.32s\"\n", (char *) slots[0]);
+    return 1;
+  }
+
+  /* Idempotent round-trip of fuji_put_host_slots(): FujiConfig's Hosts form
+   * writes all 8 slots back on every edit (per the firmware "send fixed
+   * structs at full size" hazard), so this must work and must not disturb
+   * slots the user didn't touch. Write the exact bytes just read back, then
+   * re-read and compare -- never write anything actually different here. */
+  if (!fuji_put_host_slots(slots, 8)) {
+    fprintf(stderr, "fuji_put_host_slots (round-trip, unchanged) failed (last_error=%u)\n",
+            (unsigned) fuji_palmos_last_error());
+    return 1;
+  }
+  {
+    HostSlot verify[8];
+    memset(verify, 0, sizeof(verify));
+    if (!fuji_get_host_slots(verify, 8)) {
+      fprintf(stderr, "fuji_get_host_slots (post-write verify) failed (last_error=%u)\n",
+              (unsigned) fuji_palmos_last_error());
+      return 1;
+    }
+    if (memcmp(slots, verify, sizeof(slots)) != 0) {
+      fprintf(stderr, "fuji_put_host_slots round-trip mismatch: slots changed\n");
+      return 1;
+    }
+  }
+  printf("fuji_put_host_slots round-trip: OK (8 slots written and re-verified unchanged)\n");
+  return 0;
+}
+
+/* Lists one directory to completion via fuji_open_directory_filter() /
+ * fuji_read_directory() / fuji_close_directory(), the exact sequence
+ * FujiConfig's Browse form uses. Detects end-of-listing the same way
+ * core/fn_fuji.c's fn_fuji_read_directory() does -- fujinet-lib's own
+ * fuji_read_directory() wrapper does NOT decode this, it is a firmware
+ * convention the caller must check itself (fujiDevice.cpp:990-991,
+ * confirmed live below): the reply's first two bytes are both 0x7F.
+ * Prints each entry (trailing '/' on directories, confirmed live) and
+ * returns the number of entries listed, or -1 on error. */
+static int list_directory(uint8_t hostSlot, const char *path)
+{
+  int count = 0;
+
+  /* NOT fuji_open_directory_filter(hostSlot, path, "") -- confirmed live
+   * (see FujiConfig build notes) that it reads MEMORY GARBAGE and sends it
+   * to the firmware as a bogus filter pattern whenever `filter` is empty.
+   * Root cause: fuji_open_directory_filter() (common/
+   * fuji_open_directory_filter.c) only builds its padded, correctly-sized
+   * static buffer[256] when filter[0] is true; with an empty filter it
+   * instead forwards `path` (here, a short string literal) STRAIGHT to
+   * fuji_open_directory(), whose FUJICALL_A1_D(..., MAX_FILENAME_LEN)
+   * unconditionally reads a FIXED 256 bytes starting at that pointer
+   * (include/fujinet-fuji.h) -- an out-of-bounds read on any path shorter
+   * than 256 bytes, which is every real path. The firmware then reads that
+   * garbage tail as an fnmatch-style filter pattern (fujiDevice.cpp
+   * fujicore_open_directory_success), which can silently drop real
+   * entries. Confirmed live: listing "/palm" this way returned zero
+   * entries even though hello.prc is present, because whatever heap/rodata
+   * bytes trailed the "/palm" literal didn't match it.
+   *
+   * Workaround (no fujinet-lib-palmos source changes): build our own
+   * zero-padded MAX_FILENAME_LEN buffer and call the public
+   * fuji_open_directory() macro directly. This is the exact byte layout
+   * fuji_open_directory_filter()'s own non-empty-filter branch produces,
+   * just done for the empty-filter case too. */
+  {
+    char pathbuf[MAX_FILENAME_LEN];
+    size_t plen = strlen(path);
+
+    if (plen >= sizeof(pathbuf))
+      plen = sizeof(pathbuf) - 1;
+    memset(pathbuf, 0, sizeof(pathbuf));
+    memcpy(pathbuf, path, plen);
+
+    if (!fuji_mount_host_slot(hostSlot)) {
+      fprintf(stderr, "fuji_mount_host_slot(%u) failed (last_error=%u)\n",
+              (unsigned) hostSlot, (unsigned) fuji_palmos_last_error());
+      return -1;
+    }
+
+    if (!fuji_open_directory(hostSlot, pathbuf)) {
+      fprintf(stderr, "fuji_open_directory(%u, \"%s\") failed (last_error=%u)\n",
+              (unsigned) hostSlot, path, (unsigned) fuji_palmos_last_error());
+      return -1;
+    }
+  }
+
+  printf("directory listing of \"%s\" on host slot %u:\n", path, (unsigned) hostSlot);
+  for (;;) {
+    unsigned char buf[256];
+    size_t namelen;
+
+    memset(buf, 0xAA, sizeof(buf));
+    if (!fuji_read_directory(255, 0, buf)) {
+      fprintf(stderr, "fuji_read_directory failed (last_error=%u)\n",
+              (unsigned) fuji_palmos_last_error());
+      fuji_close_directory();
+      return -1;
+    }
+
+    if (buf[0] == 0x7F && buf[1] == 0x7F) {
+      break; /* end-of-directory marker */
+    }
+
+    /* Reply is exactly 255 bytes, NUL-padded after the entry name. */
+    namelen = strnlen((char *) buf, 255);
+    printf("  [%3d] %.*s\n", count, (int) namelen, (char *) buf);
+    count++;
+
+    if (count > 500) {
+      fprintf(stderr, "list_directory: giving up after 500 entries (no end marker seen)\n");
+      fuji_close_directory();
+      return -1;
+    }
+  }
+
+  fuji_close_directory();
+  return count;
+}
+
+static int test_directory_listing(void)
+{
+  int rootCount = list_directory(0, "/");
+  int subCount;
+
+  if (rootCount < 0)
+    return 1;
+
+  subCount = list_directory(0, "/palm");
+  if (subCount < 0)
+    return 1;
+
+  if (subCount < 1) {
+    fprintf(stderr, "expected at least one entry under /palm (hello.prc) -- "
+                     "is " TEST_PRC_DISK_PATH " present?\n");
+    return 1;
+  }
+
+  return 0;
+}
+
+/* N: open + full read of the test .prc, the exact sequence FujiConfig's
+ * Install form uses for its ExgDBRead readProc. network_read() (common/
+ * network_read.c, via network_read_nb.c) already loops internally until it
+ * has filled the requested length or hit real EOF/error -- confirmed by
+ * reading that source -- so a single bounded-size call per chunk is enough;
+ * no manual network_status() polling is required in the app. */
+static int test_install_read(void)
+{
+  char buf[512];
+  size_t total = 0;
+  int16_t n;
+  struct stat st;
+
+  if (stat(TEST_PRC_DISK_PATH, &st) != 0) {
+    fprintf(stderr, "stat(%s) failed -- copy palm/apps/hello/hello.prc there first "
+                     "(see palm/apps/fujiconfig build notes)\n", TEST_PRC_DISK_PATH);
+    return 1;
+  }
+
+  if (network_open(TEST_PRC_DEVICESPEC, OPEN_MODE_READ, OPEN_TRANS_NONE) != FN_ERR_OK) {
+    fprintf(stderr, "network_open(%s) failed\n", TEST_PRC_DEVICESPEC);
+    return 1;
+  }
+
+  for (;;) {
+    n = network_read(TEST_PRC_DEVICESPEC, buf, sizeof(buf));
+    if (n < 0) {
+      fprintf(stderr, "network_read failed (n=%d)\n", (int) n);
+      network_close(TEST_PRC_DEVICESPEC);
+      return 1;
+    }
+    if (n == 0)
+      break; /* EOF */
+    total += (size_t) n;
+    if (total > 10u * 1024u * 1024u) {
+      fprintf(stderr, "test_install_read: giving up after 10MB (no EOF seen)\n");
+      network_close(TEST_PRC_DEVICESPEC);
+      return 1;
+    }
+  }
+
+  network_close(TEST_PRC_DEVICESPEC);
+
+  printf("network_read %s: %lu bytes (disk file is %lld bytes)\n",
+         TEST_PRC_DEVICESPEC, (unsigned long) total, (long long) st.st_size);
+
+  if (total != (size_t) st.st_size) {
+    fprintf(stderr, "byte count mismatch: read %lu, disk file is %lld\n",
+            (unsigned long) total, (long long) st.st_size);
+    return 1;
+  }
+  return 0;
+}
+
+static int test_scan(void)
+{
+  uint8_t count = 0;
+
+  if (!fuji_scan_for_networks(&count)) {
+    fprintf(stderr, "fuji_scan_for_networks failed (last_error=%u)\n",
+            (unsigned) fuji_palmos_last_error());
+    return 1;
+  }
+
+  printf("scan_for_networks: %u result(s)\n", (unsigned) count);
+
+  if (count > 0) {
+    SSIDInfo info;
+
+    memset(&info, 0, sizeof(info));
+    if (!fuji_get_scan_result(0, &info)) {
+      fprintf(stderr, "fuji_get_scan_result(0) failed (last_error=%u)\n",
+              (unsigned) fuji_palmos_last_error());
+      return 1;
+    }
+    printf("  [0] ssid=\"%.*s\" rssi=%d\n",
+           (int) sizeof(info.ssid), info.ssid, (int) info.rssi);
+  }
+
+  /* fujinet-pc fakes WiFi (see FujiConfig build notes) -- a 0-result scan
+   * is not a failure here, only a malformed call would be. */
+  return 0;
+}
+
+static int run_fujiconfig_tests(void)
+{
+  int rc = 0;
+
+  if (test_host_slots() != 0)
+    rc = 1;
+  if (test_directory_listing() != 0)
+    rc = 1;
+  if (test_install_read() != 0)
+    rc = 1;
+  if (test_scan() != 0)
+    rc = 1;
+
+  return rc;
+}
+
 int main(int argc, char **argv)
 {
   const char *host = "127.0.0.1";
   int port = 1985;
   int verbose = 0;
+  /* New 4th arg (mode): "all" (default) runs the original endian/adapter/
+   * network/json exercises plus the FujiConfig call sequences below;
+   * "fujiconfig" runs only the new ones, for fast iteration. The existing
+   * 3-arg invocation (host port verbose) is unchanged and still runs
+   * everything it always did. */
+  const char *mode = "all";
   int rc = 0;
 
   if (argc > 1)
@@ -281,10 +575,14 @@ int main(int argc, char **argv)
     port = atoi(argv[2]);
   if (argc > 3)
     verbose = atoi(argv[3]);
+  if (argc > 4)
+    mode = argv[4];
 
-  test_endian_fixup();
-  if (g_test_failures > 0)
-    rc = 1;
+  if (strcmp(mode, "fujiconfig") != 0) {
+    test_endian_fixup();
+    if (g_test_failures > 0)
+      rc = 1;
+  }
 
   g_transport = fn_transport_tcp_open(host, port, verbose);
   if (g_transport == NULL) {
@@ -293,11 +591,16 @@ int main(int argc, char **argv)
   }
   fn_init(&g_ctx, g_transport);
 
-  if (test_adapter_config() != 0)
-    rc = 1;
-  if (test_network_read() != 0)
-    rc = 1;
-  if (test_json() != 0)
+  if (strcmp(mode, "fujiconfig") != 0) {
+    if (test_adapter_config() != 0)
+      rc = 1;
+    if (test_network_read() != 0)
+      rc = 1;
+    if (test_json() != 0)
+      rc = 1;
+  }
+
+  if (run_fujiconfig_tests() != 0)
     rc = 1;
 
   fn_transport_tcp_close(g_transport);
