@@ -1,0 +1,17 @@
+#include "nettest_rsc.h"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "FujiNet NetTest"
+    FIELD ID LogField AT (1 16 150 116) NONEDITABLE MULTIPLELINES HASSCROLLBAR MAXCHARS 4000 FONT 0
+    SCROLLBAR ID LogScroll AT (152 16 7 116) VALUE 0 MIN 0 MAX 0 PAGESIZE 10
+    BUTTON "Install" ID InstallButton AT (1 134 50 11)
+    BUTTON "Remove" ID RemoveButton AT (55 134 50 11)
+    BUTTON "Status" ID StatusButton AT (109 134 50 11)
+    BUTTON "DNS" ID DnsButton AT (1 148 50 11)
+    BUTTON "HTTP" ID HttpButton AT (55 148 50 11)
+    BUTTON "Clear" ID ClearButton AT (109 148 50 11)
+END
+
+VERSION ID 1 "0.1"

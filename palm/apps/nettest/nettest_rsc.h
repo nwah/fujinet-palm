@@ -1,0 +1,9 @@
+#define MainForm        1000
+#define LogField        1001
+#define LogScroll       1002
+#define InstallButton   1010
+#define RemoveButton    1011
+#define StatusButton    1012
+#define DnsButton       1013
+#define HttpButton      1014
+#define ClearButton     1015

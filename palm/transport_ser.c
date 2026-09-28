@@ -52,9 +52,18 @@ Err HsExtKeyboardEnable(Boolean enable)
  * creator code to try with SysLibLoad('libr', creator, &refNum) if
  * SysLibFind fails. A creator of 0 means "no verified fallback creator";
  * for those we rely on SysLibFind alone rather than guess a code. */
+/* name is a fixed-size char array, not a `const char *`: a table of pointers
+ * to string literals would need load-time relocations to fill in each
+ * literal's absolute address, which is fine in an ordinary app (the loader
+ * patches those in) but fatal in a ROM-resident system library (fnnetlib.prc
+ * reuses this file -- see palm/netshim/) where build-prc silently drops any
+ * .data it finds ("warning: global data ignored"), leaving those pointers
+ * as zero at runtime. A char[] holds the bytes inline as plain .text-like
+ * const data, addressed PC-relative like any other literal -- no
+ * relocation needed either way. */
 static const struct {
-    const char *name;
-    UInt32      creator;
+    char   name[20];
+    UInt32 creator;
 } kSerLibs[] = {
     { "USB Library",    'HsUs' },
     { "BuiltIn SerLib",  0     }, /* creator unknown; SysLibFind by name only */

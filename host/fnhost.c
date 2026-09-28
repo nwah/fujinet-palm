@@ -103,7 +103,8 @@ static void usage(const char *prog)
         "  ls SLOT [PATH]\n"
         "  get URL\n"
         "  json URL QUERY\n"
-        "  raw DEV CMD [hexpayload]\n",
+        "  raw DEV CMD [hexpayload]\n"
+        "  tcp HOST:PORT [TEXT]\n",
         prog);
 }
 
@@ -477,6 +478,107 @@ out:
     return rc;
 }
 
+/* Step 0 of the netshim spec: confirms the firmware's STATUS semantics for
+ * a TCP devicespec ("N:TCP://HOST:PORT/") -- what avail/connected/err report
+ * before data arrives, while it's pending, and after the peer closes. Opens
+ * unit 1 read/write (mode 12, FN_OPEN_RW), optionally writes TEXT (with
+ * literal "\r\n" two-char escapes unescaped to real CR/LF, since shells
+ * don't pass real control chars easily), then polls fn_net_status/reads
+ * whatever is available for up to ~5s, printing every poll, stopping early
+ * once connected==0 and avail==0 (server closed and drained). */
+static int cmd_tcp(FnCtx *ctx, int argc, char **argv)
+{
+    const char *hostport;
+    const char *text = NULL;
+    char devspec[300];
+    char wbuf[1024];
+    unsigned char buf[FN_MAX_DATA];
+    FnErr e;
+    int rc = 0;
+    long elapsed_ms = 0;
+
+    if (argc < 2) {
+        fprintf(stderr, "usage: tcp HOST:PORT [TEXT]\n");
+        return 2;
+    }
+    hostport = argv[1];
+    if (argc >= 3) {
+        text = argv[2];
+    }
+
+    snprintf(devspec, sizeof(devspec), "N:TCP://%s/", hostport);
+
+    e = fn_net_open(ctx, 1, devspec, FN_OPEN_RW, FN_TRANS_NONE);
+    printf("open %s: %s\n", devspec, fnerr_name(e));
+    if (e != FN_OK) {
+        return fail("tcp", e);
+    }
+
+    if (text != NULL) {
+        size_t wi = 0, ri;
+        size_t tl = strlen(text);
+        for (ri = 0; ri < tl && wi < sizeof(wbuf) - 1; ri++) {
+            if (text[ri] == '\\' && ri + 1 < tl && text[ri + 1] == 'r') {
+                wbuf[wi++] = '\r';
+                ri++;
+            } else if (text[ri] == '\\' && ri + 1 < tl && text[ri + 1] == 'n') {
+                wbuf[wi++] = '\n';
+                ri++;
+            } else {
+                wbuf[wi++] = text[ri];
+            }
+        }
+        e = fn_net_write(ctx, 1, wbuf, (fn_u16)wi);
+        printf("write %lu bytes: %s\n", (unsigned long)wi, fnerr_name(e));
+        if (e != FN_OK) {
+            fn_net_close(ctx, 1);
+            return fail("tcp", e);
+        }
+    }
+
+    for (;;) {
+        fn_u16 avail = 0, got = 0;
+        fn_u8 connected = 0, err = 0, err2 = 0;
+
+        e = fn_net_status(ctx, 1, &avail, &connected, &err);
+        if (e != FN_OK) {
+            fprintf(stderr, "error: tcp: status: %s\n", fnerr_name(e));
+            rc = 1;
+            break;
+        }
+        printf("status: avail=%u connected=%u err=%u\n",
+               (unsigned)avail, (unsigned)connected, (unsigned)err);
+
+        if (avail > 0) {
+            e = fn_net_read_avail(ctx, 1, buf, sizeof(buf), &got, &err2);
+            if (e != FN_OK) {
+                fprintf(stderr, "error: tcp: read: %s\n", fnerr_name(e));
+                rc = 1;
+                break;
+            }
+            printf("read %u bytes:\n", (unsigned)got);
+            hexdump_stdout(buf, got);
+            fwrite(buf, 1, got, stdout);
+            printf("\n");
+        }
+
+        if (connected == 0 && avail == 0) {
+            printf("done: connected=0 avail=0\n");
+            break;
+        }
+
+        usleep(100000);
+        elapsed_ms += 100;
+        if (elapsed_ms >= 5000) {
+            printf("stopping: 5s poll budget exhausted\n");
+            break;
+        }
+    }
+
+    fn_net_close(ctx, 1);
+    return rc;
+}
+
 static int cmd_raw(FnCtx *ctx, int argc, char **argv)
 {
     fn_u8 dev, cmdb;
@@ -652,6 +754,8 @@ int main(int argc, char **argv)
         rc = cmd_json(&ctx, cmd_argc, cmd_argv);
     } else if (strcmp(cmd, "raw") == 0) {
         rc = cmd_raw(&ctx, cmd_argc, cmd_argv);
+    } else if (strcmp(cmd, "tcp") == 0) {
+        rc = cmd_tcp(&ctx, cmd_argc, cmd_argv);
     } else {
         fprintf(stderr, "error: unrecognized command '%s'\n", cmd);
         usage(argv[0]);

@@ -20,3 +20,5 @@ compat_include/
 /tools/node_modules/
 /tools/package-lock.json
 /tools/palm-sync/
+/palm/apps/nettest/nettest
+/palm/netshim/fnnetlib
