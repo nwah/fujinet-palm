@@ -1,0 +1,57 @@
+#include "weather_rsc.h"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Weather"
+
+    /* Everything below the title is drawn manually with WinDrawChars in
+     * C (city line, temp, condition, wind/humidity/pressure, the 5-day
+     * list) -- it all changes on refresh, so no LABEL objects, following
+     * fujiconfig.c's DrawMainStatus / mastodon.c's DrawHeader pattern.
+     * Layout the C code uses (top-left y of each line):
+     *   y=16  city/region line
+     *   y=28  current temp (boldFont, large) + "Feels NNF" to its right
+     *   y=44  condition text
+     *   y=56  wind line
+     *   y=68  humidity line
+     *   y=80  pressure line
+     *   y=92..134  5-day forecast, ~9px per row
+     */
+
+    PUSHBUTTON "C" ID UnitCButton AT (4  140 20 14) GROUP 1 FONT 0
+    PUSHBUTTON "F" ID UnitFButton AT (25 140 20 14) GROUP 1 FONT 0
+    BUTTON "City"    ID CityButton    AT (50  140 46 14) FONT 0
+    BUTTON "Refresh" ID RefreshButton AT (100 140 56 14) FONT 0
+END
+
+FORM ID CityDialog AT (6 50 148 60)
+FRAME
+MODAL
+SAVEBEHIND
+BEGIN
+    TITLE "City"
+
+    FIELD ID CityField AT (6 20 136 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 39 FONT 0
+
+    BUTTON "Go"     ID CityGoButton     AT (6  38 60 14) FONT 0
+    BUTTON "Cancel" ID CityCancelButton AT (76 38 60 14) FONT 0
+END
+
+ALERT ID GeneralAlert
+ERROR
+BEGIN
+    TITLE "Weather"
+    MESSAGE "^1\n\nerror: ^2 (0x^3)"
+    BUTTONS "OK"
+END
+
+ALERT ID InfoAlert
+INFORMATION
+BEGIN
+    TITLE "Weather"
+    MESSAGE "^1"
+    BUTTONS "OK"
+END
+
+VERSION ID 1 "0.1"

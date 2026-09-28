@@ -1,0 +1,54 @@
+#include "isstracker_rsc.h"
+
+BITMAP ID MapBitmap "map.bmp"
+
+FORM ID MainForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "ISS Tracker"
+
+    /* Map is drawn manually at (0,16)-(160,96) in C via WinDrawBitmap --
+     * no BITMAP form object here, just the raw resource above. Status
+     * text below the map (y=98..134) is also all drawn manually with
+     * WinDrawChars, not LABEL objects, since it changes on every refresh
+     * (see fujiconfig.c's DrawMainStatus for the pattern this follows). */
+
+    BUTTON "Refresh" ID RefreshButton AT (4  140 60 14) FONT 0
+    BUTTON "Crew"    ID CrewButton    AT (96 140 60 14) FONT 0
+END
+
+FORM ID CrewForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Crew in Space"
+
+    FIELD ID CrewField AT (4 16 143 118)
+        NONEDITABLE
+        MULTIPLELINES
+        HASSCROLLBAR
+        MAXCHARS 2047
+        FONT 0
+
+    SCROLLBAR ID CrewScrollBar AT (148 16 7 118)
+        MIN 0 MAX 0 VALUE 0 PAGESIZE 1
+
+    BUTTON "Done" ID CrewDoneButton AT (114 140 40 14) FONT 0
+END
+
+ALERT ID GeneralAlert
+ERROR
+BEGIN
+    TITLE "ISS Tracker"
+    MESSAGE "^1\n\nerror: ^2 (0x^3)"
+    BUTTONS "OK"
+END
+
+ALERT ID InfoAlert
+INFORMATION
+BEGIN
+    TITLE "ISS Tracker"
+    MESSAGE "^1"
+    BUTTONS "OK"
+END
+
+VERSION ID 1 "0.1"

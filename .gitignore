@@ -13,6 +13,9 @@ bin.stamp
 /palm/apps/mastodon/mastodon
 /palm/apps/mastodon/test_htmlclean
 /palm/apps/fujiconfig/fujiconfig
+/palm/apps/isstracker/isstracker
+/palm/apps/weather/weather
+/palm/apps/news/news
 compat_include/
 /tools/node_modules/
 /tools/package-lock.json

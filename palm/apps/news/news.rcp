@@ -1,0 +1,66 @@
+#include "news_rsc.h"
+
+FORM ID CategoryForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "News"
+
+    LIST "Top Stories" "World" "Science" "Business" "Technology"
+         "Health" "Entertainment" "Politics" "Sports"
+         ID CategoryList AT (4 16 152 130) FONT 0
+END
+
+FORM ID ArticlesForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Articles"
+
+    /* "Page p of N" is drawn manually at y=16 in C (it changes every
+     * Prev/Next tap) -- no LABEL object. */
+
+    LIST ID ArticlesList AT (4 28 152 96) FONT 0
+
+    BUTTON "Prev" ID ArticlesPrevButton AT (4   140 30 14) FONT 0
+    BUTTON "Next" ID ArticlesNextButton AT (38  140 30 14) FONT 0
+    BUTTON "Back" ID ArticlesBackButton AT (116 140 40 14) FONT 0
+END
+
+FORM ID ArticleForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Article"
+
+    /* Title (boldFont) at y=16 and the date/source line at y=28 are both
+     * drawn manually with WinDrawChars in C, not LABEL objects -- they
+     * change on every article load and may need truncation to fit. */
+
+    FIELD ID ArticleBodyField AT (4 40 143 88)
+        NONEDITABLE
+        MULTIPLELINES
+        HASSCROLLBAR
+        MAXCHARS 16350
+        FONT 0
+
+    SCROLLBAR ID ArticleBodyScrollBar AT (148 40 7 88)
+        MIN 0 MAX 0 VALUE 0 PAGESIZE 1
+
+    BUTTON "Back" ID ArticleBackButton AT (116 140 40 14) FONT 0
+END
+
+ALERT ID GeneralAlert
+ERROR
+BEGIN
+    TITLE "News"
+    MESSAGE "^1\n\nerror: ^2 (0x^3)"
+    BUTTONS "OK"
+END
+
+ALERT ID InfoAlert
+INFORMATION
+BEGIN
+    TITLE "News"
+    MESSAGE "^1"
+    BUTTONS "OK"
+END
+
+VERSION ID 1 "0.1"

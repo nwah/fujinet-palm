@@ -556,6 +556,315 @@ static int run_fujiconfig_tests(void)
   return rc;
 }
 
+/* ------------------------------------------------------------------ */
+/* ISS Tracker call-sequence exercises: the exact fujinet-lib calls
+ * palm/apps/isstracker/isstracker.c makes (via ../../palm/apps/common/
+ * fnapp.c's fnapp_json_open/fnapp_json_query/fnapp_json_close, which are
+ * thin wrappers over network_open/network_json_parse/network_json_query/
+ * network_close -- exercised directly here since fnapp.c itself is Palm-
+ * app code, not part of fujinet-lib proper).
+ * ------------------------------------------------------------------ */
+
+static int test_iss(void)
+{
+  const char *spec = "N:http://api.open-notify.org/iss-now.json";
+  const char *astros = "N:http://api.open-notify.org/astros.json";
+  char buf[64];
+  int16_t n;
+  int rc = 0;
+
+  if (network_open(spec, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+    fprintf(stderr, "test_iss: network_open(%s) failed\n", spec);
+    return 1;
+  }
+  if (network_json_parse(spec) != FN_ERR_OK) {
+    fprintf(stderr, "test_iss: network_json_parse failed\n");
+    network_close(spec);
+    return 1;
+  }
+
+  n = network_json_query(spec, "/timestamp", buf);
+  if (n < 0) { fprintf(stderr, "test_iss: /timestamp failed (n=%d)\n", (int) n); rc = 1; }
+  else printf("iss timestamp: %.*s\n", (int) n, buf);
+
+  n = network_json_query(spec, "/iss_position/latitude", buf);
+  if (n < 0) { fprintf(stderr, "test_iss: /iss_position/latitude failed (n=%d)\n", (int) n); rc = 1; }
+  else printf("iss latitude: %.*s\n", (int) n, buf);
+
+  n = network_json_query(spec, "/iss_position/longitude", buf);
+  if (n < 0) { fprintf(stderr, "test_iss: /iss_position/longitude failed (n=%d)\n", (int) n); rc = 1; }
+  else printf("iss longitude: %.*s\n", (int) n, buf);
+
+  network_close(spec);
+
+  if (network_open(astros, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+    fprintf(stderr, "test_iss: network_open(%s) failed\n", astros);
+    return 1;
+  }
+  if (network_json_parse(astros) != FN_ERR_OK) {
+    fprintf(stderr, "test_iss: astros network_json_parse failed\n");
+    network_close(astros);
+    return 1;
+  }
+
+  n = network_json_query(astros, "/number", buf);
+  if (n < 0) {
+    fprintf(stderr, "test_iss: /number failed (n=%d)\n", (int) n);
+    rc = 1;
+  } else {
+    int count = atoi(buf);
+    char path[32];
+
+    printf("astros /number: %.*s\n", (int) n, buf);
+    if (count > 0) {
+      n = network_json_query(astros, "/people/0/name", buf);
+      if (n < 0) { fprintf(stderr, "test_iss: /people/0/name failed\n"); rc = 1; }
+      else printf("astros /people/0/name: %.*s\n", (int) n, buf);
+
+      snprintf(path, sizeof(path), "/people/%d/craft", 0);
+      n = network_json_query(astros, path, buf);
+      if (n < 0) { fprintf(stderr, "test_iss: /people/0/craft failed\n"); rc = 1; }
+      else printf("astros /people/0/craft: %.*s\n", (int) n, buf);
+    }
+  }
+
+  network_close(astros);
+  return rc;
+}
+
+/* ------------------------------------------------------------------ */
+/* Weather call-sequence exercises: the exact fujinet-lib calls
+ * palm/apps/weather/weather.c makes (ip-api geolocation, Open-Meteo
+ * geocoding, and the combined current+daily forecast request).
+ * ------------------------------------------------------------------ */
+
+static int test_weather(void)
+{
+  const char *ip_url = "N:http://ip-api.com/json/?fields=status,city,regionName,countryCode,lon,lat";
+  char lat[20], lon[20], city[32];
+  char buf[64];
+  char url[256];
+  int16_t n;
+  int rc = 0;
+
+  if (network_open(ip_url, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+    fprintf(stderr, "test_weather: network_open(ip-api) failed\n");
+    return 1;
+  }
+  if (network_json_parse(ip_url) != FN_ERR_OK) {
+    fprintf(stderr, "test_weather: ip-api network_json_parse failed\n");
+    network_close(ip_url);
+    return 1;
+  }
+
+  n = network_json_query(ip_url, "/status", buf);
+  printf("ip-api /status: %.*s\n", (int) (n < 0 ? 0 : n), buf);
+  n = network_json_query(ip_url, "/city", city);
+  printf("ip-api /city: %.*s\n", (int) (n < 0 ? 0 : n), city);
+  n = network_json_query(ip_url, "/lat", lat);
+  printf("ip-api /lat: %.*s\n", (int) (n < 0 ? 0 : n), lat);
+  n = network_json_query(ip_url, "/lon", lon);
+  printf("ip-api /lon: %.*s\n", (int) (n < 0 ? 0 : n), lon);
+  network_close(ip_url);
+
+  if (lat[0] == '\0' || lon[0] == '\0') {
+    fprintf(stderr, "test_weather: no lat/lon from ip-api, skipping forecast query\n");
+    return 1;
+  }
+
+  /* CRITICAL FINDING (confirmed live 2026-09-28): fujinet-pc/the firmware
+   * silently truncates a devicespec (the whole "N:..." string, INCLUDING
+   * the "N:" prefix) at exactly 256 bytes, regardless of this platform's
+   * FUJI_VARIABLE_LEN_PACKETS=1 (which only affects what the CLIENT
+   * calculates as NETWORK_OPEN_LEN, not what the server/firmware actually
+   * honors). A single combined Open-Meteo request listing every field
+   * (357 bytes) got cut mid-parameter -- "weather_code" truncated to
+   * "weather" -- producing a small JSON *error* body ({"error":true,...})
+   * with no open/parse-level failure at all: network_open and
+   * network_json_parse both report FN_ERR_OK, so this is invisible unless
+   * you inspect the actual query results (which all come back empty).
+   * Binary-searched the exact cutoff: bodies came back correct through a
+   * 204-byte devicespec, and the truncation-induced error appeared at
+   * 261 bytes (cut at byte 256 precisely). Also, https:// specifically to
+   * api.open-meteo.com/v1/forecast was separately confirmed to return a
+   * 0-byte body every time (open/parse both report FN_ERR_OK, but no
+   * data ever arrives) while http:// against the identical host+path
+   * always worked -- both findings are baked into
+   * palm/apps/weather/weather.c's GetWeather(), which issues THREE short
+   * http:// requests instead of one long one, each safely under ~230
+   * bytes even with 9-byte lat/lon strings. Exercise that exact 3-request
+   * sequence here. */
+  {
+    /* Request 1: current temp/feels-like/wind (unit-dependent). */
+    snprintf(url, sizeof(url),
+             "N:http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
+             "&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m"
+             "&temperature_unit=fahrenheit&wind_speed_unit=mph&timeformat=unixtime",
+             lat, lon);
+    if (network_open(url, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: network_open(forecast req1) failed\n");
+      return 1;
+    }
+    if (network_json_parse(url) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: forecast req1 network_json_parse failed\n");
+      network_close(url);
+      return 1;
+    }
+    n = network_json_query(url, "/current/temperature_2m", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /current/temperature_2m failed/empty (n=%d)\n", (int) n); rc = 1; }
+    else printf("weather /current/temperature_2m: %.*s\n", (int) n, buf);
+    n = network_json_query(url, "/current/wind_direction_10m", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /current/wind_direction_10m failed/empty\n"); rc = 1; }
+    else printf("weather /current/wind_direction_10m: %.*s\n", (int) n, buf);
+    network_close(url);
+
+    /* Request 2: current humidity/weather code/pressure (unit-independent). */
+    snprintf(url, sizeof(url),
+             "N:http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
+             "&current=relative_humidity_2m,weather_code,surface_pressure&timeformat=unixtime",
+             lat, lon);
+    if (network_open(url, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: network_open(forecast req2) failed\n");
+      return 1;
+    }
+    if (network_json_parse(url) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: forecast req2 network_json_parse failed\n");
+      network_close(url);
+      return 1;
+    }
+    n = network_json_query(url, "/current/weather_code", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /current/weather_code failed/empty\n"); rc = 1; }
+    else printf("weather /current/weather_code: %.*s\n", (int) n, buf);
+    network_close(url);
+
+    /* Request 3: 5-day forecast. */
+    snprintf(url, sizeof(url),
+             "N:http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
+             "&forecast_days=6&daily=temperature_2m_max,temperature_2m_min,weather_code"
+             "&temperature_unit=fahrenheit&timeformat=unixtime",
+             lat, lon);
+    if (network_open(url, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: network_open(forecast req3) failed\n");
+      return 1;
+    }
+    if (network_json_parse(url) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: forecast req3 network_json_parse failed\n");
+      network_close(url);
+      return 1;
+    }
+    n = network_json_query(url, "/daily/temperature_2m_max/1", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /daily/temperature_2m_max/1 failed/empty\n"); rc = 1; }
+    else printf("weather /daily/temperature_2m_max/1: %.*s\n", (int) n, buf);
+    network_close(url);
+  }
+
+  /* Geocoding endpoint, independent of the location above. http, NOT
+   * https, for the same reason as the forecast URL above -- confirmed
+   * live: https://geocoding-api.open-meteo.com was flaky (roughly 2/3
+   * runs) while http:// was 100% reliable across repeated runs. */
+  {
+    const char *geoUrl = "N:http://geocoding-api.open-meteo.com/v1/search?name=Chicago&count=1&language=en&format=json";
+
+    if (network_open(geoUrl, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: network_open(geocoding) failed\n");
+      return 1;
+    }
+    if (network_json_parse(geoUrl) != FN_ERR_OK) {
+      fprintf(stderr, "test_weather: geocoding network_json_parse failed\n");
+      network_close(geoUrl);
+      return 1;
+    }
+    n = network_json_query(geoUrl, "/results/0/name", buf);
+    if (n < 0) { fprintf(stderr, "test_weather: /results/0/name failed\n"); rc = 1; }
+    else printf("geocoding /results/0/name: %.*s\n", (int) n, buf);
+    network_close(geoUrl);
+  }
+
+  return rc;
+}
+
+/* ------------------------------------------------------------------ */
+/* News call-sequence exercises: the exact fujinet-lib calls
+ * palm/apps/news/news.c makes -- plain network_read of the category
+ * listing and article endpoints (no JSON parser; the server returns
+ * pipe/newline-delimited text, see palm/apps/news/news.c's NextField).
+ * ------------------------------------------------------------------ */
+
+static int test_news(void)
+{
+  const char *listUrl = "N:https://fujinet.online/8bitnews/news.php?t=lf&ps=255x24&l=5&p=1&c=top";
+  char buf[4096];
+  size_t total = 0;
+  int16_t n;
+  unsigned long articleId = 0;
+  char *firstLine;
+  char *idStart;
+
+  if (network_open(listUrl, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+    fprintf(stderr, "test_news: network_open(listing) failed\n");
+    return 1;
+  }
+  for (;;) {
+    n = network_read(listUrl, buf + total, (uint16_t) (sizeof(buf) - 1 - total));
+    if (n <= 0) break;
+    total += (size_t) n;
+    if (total >= sizeof(buf) - 1) break;
+  }
+  buf[total] = '\0';
+  network_close(listUrl);
+
+  printf("news listing (%lu bytes):\n%.*s\n", (unsigned long) total, (int) (total > 400 ? 400 : total), buf);
+
+  if (total == 0) {
+    fprintf(stderr, "test_news: empty listing response\n");
+    return 1;
+  }
+
+  /* Parse the first "id|datetime|title" line (after the "page/pages"
+   * first line) well enough to get an article id to test the article
+   * endpoint with. */
+  firstLine = strchr(buf, '\n');
+  idStart = firstLine ? firstLine + 1 : buf;
+  articleId = strtoul(idStart, NULL, 10);
+  if (articleId == 0) {
+    fprintf(stderr, "test_news: could not parse an article id from listing\n");
+    return 1;
+  }
+  printf("news: testing article id %lu\n", articleId);
+
+  {
+    char artUrl[160];
+    char artBuf[8192];
+    size_t artTotal = 0;
+
+    snprintf(artUrl, sizeof(artUrl),
+             "N:https://fujinet.online/8bitnews/news.php?t=lf&ps=255x60&l=5&p=1&a=%lu", articleId);
+
+    if (network_open(artUrl, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
+      fprintf(stderr, "test_news: network_open(article) failed\n");
+      return 1;
+    }
+    for (;;) {
+      n = network_read(artUrl, artBuf + artTotal, (uint16_t) (sizeof(artBuf) - 1 - artTotal));
+      if (n <= 0) break;
+      artTotal += (size_t) n;
+      if (artTotal >= sizeof(artBuf) - 1) break;
+    }
+    artBuf[artTotal] = '\0';
+    network_close(artUrl);
+
+    printf("news article (%lu bytes), first 200 chars:\n%.*s\n",
+           (unsigned long) artTotal, (int) (artTotal > 200 ? 200 : artTotal), artBuf);
+
+    if (artTotal == 0) {
+      fprintf(stderr, "test_news: empty article response\n");
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   const char *host = "127.0.0.1";
@@ -563,9 +872,11 @@ int main(int argc, char **argv)
   int verbose = 0;
   /* New 4th arg (mode): "all" (default) runs the original endian/adapter/
    * network/json exercises plus the FujiConfig call sequences below;
-   * "fujiconfig" runs only the new ones, for fast iteration. The existing
-   * 3-arg invocation (host port verbose) is unchanged and still runs
-   * everything it always did. */
+   * "fujiconfig" runs only the new ones, for fast iteration; "iss",
+   * "weather", "news" each run only that app's call-sequence exercises
+   * (test_iss/test_weather/test_news below), for fast iteration on a
+   * single app. The existing 3-arg invocation (host port verbose) is
+   * unchanged and still runs everything "all" always did. */
   const char *mode = "all";
   int rc = 0;
 
@@ -578,7 +889,8 @@ int main(int argc, char **argv)
   if (argc > 4)
     mode = argv[4];
 
-  if (strcmp(mode, "fujiconfig") != 0) {
+  if (strcmp(mode, "fujiconfig") != 0 && strcmp(mode, "iss") != 0 &&
+      strcmp(mode, "weather") != 0 && strcmp(mode, "news") != 0) {
     test_endian_fixup();
     if (g_test_failures > 0)
       rc = 1;
@@ -591,17 +903,25 @@ int main(int argc, char **argv)
   }
   fn_init(&g_ctx, g_transport);
 
-  if (strcmp(mode, "fujiconfig") != 0) {
-    if (test_adapter_config() != 0)
-      rc = 1;
-    if (test_network_read() != 0)
-      rc = 1;
-    if (test_json() != 0)
+  if (strcmp(mode, "iss") == 0) {
+    rc = test_iss();
+  } else if (strcmp(mode, "weather") == 0) {
+    rc = test_weather();
+  } else if (strcmp(mode, "news") == 0) {
+    rc = test_news();
+  } else {
+    if (strcmp(mode, "fujiconfig") != 0) {
+      if (test_adapter_config() != 0)
+        rc = 1;
+      if (test_network_read() != 0)
+        rc = 1;
+      if (test_json() != 0)
+        rc = 1;
+    }
+
+    if (run_fujiconfig_tests() != 0)
       rc = 1;
   }
-
-  if (run_fujiconfig_tests() != 0)
-    rc = 1;
 
   fn_transport_tcp_close(g_transport);
 
