@@ -2,6 +2,7 @@ build/
 *.o
 /host/fnhost
 /host/tests/test_core
+/host/build_fnlib/
 /run/SD/
 /run/data/
 *.prc

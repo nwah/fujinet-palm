@@ -64,3 +64,64 @@ $(BUILD)/test_core.o: tests/test_core.c | $(BUILD)
 
 clean:
 	rm -rf $(BUILD) fnhost tests/test_core
+
+# ------------------------------------------------------------------------
+# fnlib-test: host integration test for the fujinet-lib "palmos" platform
+# port. Builds the ACTUAL fujinet-lib common/*.c + bus/palmos/fujinet-bus-
+# palmos.c from the worktree below, unmodified, against ../core/fujibus.c
+# (NOT the vendored bus/palmos/fujibus.c -- see fnlib_host.c's own
+# fuji_palmos_ctx(), which replaces link_palmos.c with the TCP transport).
+# Does not touch any of the targets/variables above.
+# ------------------------------------------------------------------------
+FNLIB ?= ../../fujinet-lib-palmos
+
+FNLIB_CFLAGS = -std=c99 -Wall -Wextra -DFN_HAVE_STDINT -D__palmos__ \
+               -I$(FNLIB)/include -I$(FNLIB)/bus/palmos -I../core
+
+FNLIB_BUILD = build_fnlib
+
+FNLIB_COMMON_SRCS := $(wildcard $(FNLIB)/common/*.c)
+FNLIB_COMMON_OBJS := $(patsubst $(FNLIB)/common/%.c,$(FNLIB_BUILD)/common_%.o,$(FNLIB_COMMON_SRCS))
+
+FNLIB_OBJS = $(FNLIB_COMMON_OBJS) \
+             $(FNLIB_BUILD)/fujinet-bus-palmos.o \
+             $(FNLIB_BUILD)/fnlib_appkey.o \
+             $(FNLIB_BUILD)/fnlib_fujibus.o \
+             $(FNLIB_BUILD)/fnlib_transport_tcp.o \
+             $(FNLIB_BUILD)/fnlib_host.o
+
+.PHONY: fnlib-test fnlib-test-run
+
+fnlib-test: $(FNLIB_BUILD)/fnlib-test
+
+fnlib-test-run: fnlib-test
+	./$(FNLIB_BUILD)/fnlib-test
+
+$(FNLIB_BUILD):
+	mkdir -p $(FNLIB_BUILD)
+
+$(FNLIB_BUILD)/fnlib-test: $(FNLIB_OBJS)
+	$(CC) $(FNLIB_CFLAGS) -o $@ $(FNLIB_OBJS)
+
+$(FNLIB_BUILD)/common_%.o: $(FNLIB)/common/%.c | $(FNLIB_BUILD)
+	$(CC) $(FNLIB_CFLAGS) -c $< -o $@
+
+$(FNLIB_BUILD)/fujinet-bus-palmos.o: $(FNLIB)/bus/palmos/fujinet-bus-palmos.c | $(FNLIB_BUILD)
+	$(CC) $(FNLIB_CFLAGS) -c $< -o $@
+
+$(FNLIB_BUILD)/fnlib_appkey.o: $(FNLIB)/bus/palmos/appkey.c | $(FNLIB_BUILD)
+	$(CC) $(FNLIB_CFLAGS) -c $< -o $@
+
+# ../core/fujibus.c, the palmos-rs232 original -- NOT the vendored copy at
+# $(FNLIB)/bus/palmos/fujibus.c, which is never compiled by this target.
+$(FNLIB_BUILD)/fnlib_fujibus.o: ../core/fujibus.c | $(FNLIB_BUILD)
+	$(CC) $(FNLIB_CFLAGS) -c $< -o $@
+
+$(FNLIB_BUILD)/fnlib_transport_tcp.o: transport_tcp.c transport_tcp.h | $(FNLIB_BUILD)
+	$(CC) $(FNLIB_CFLAGS) -c transport_tcp.c -o $@
+
+$(FNLIB_BUILD)/fnlib_host.o: fnlib_host.c | $(FNLIB_BUILD)
+	$(CC) $(FNLIB_CFLAGS) -c fnlib_host.c -o $@
+
+fnlib-clean:
+	rm -rf $(FNLIB_BUILD)
