@@ -85,6 +85,7 @@ typedef struct {
 static UInt8 gBrowseHostSlot;
 static char gBrowseHostValue[32];
 static char gBrowsePath[256];
+static char gBrowseTitle[48];         /* Browse form title; see BrowseRelist */
 static MemHandle gBrowseEntriesH = 0;
 static UInt16 gBrowseCount = 0;
 
@@ -149,6 +150,47 @@ static void ShowError(const char *what, const char *reason)
 static void ShowInfo(const char *msg)
 {
     FrmCustomAlert(InfoAlert, msg, "", "");
+}
+
+/* Draws one line of text in the active form's window, clearing the rest of
+ * the row first. Used for the dialogs' variable text: CtlSetLabel only works
+ * on controls, not LABEL objects. */
+static void DrawTextLine(const char *text, Coord x, Coord y, Coord width)
+{
+    RectangleType r;
+
+    r.topLeft.x = x;
+    r.topLeft.y = y;
+    r.extent.x = width;
+    r.extent.y = FntLineHeight();
+    WinEraseRectangle(&r, 0);
+    WinDrawChars(text, StrLen(text), x, y);
+}
+
+/* Gives an editable field its own text handle (FldSetTextPtr is only for
+ * non-editable fields). The form frees the handle when it is deleted. */
+static void FieldSetEditText(FieldType *fld, const char *init, UInt16 cap)
+{
+    MemHandle h = MemHandleNew(cap);
+    char *p;
+
+    if (!h) {
+        return;
+    }
+    p = (char *)MemHandleLock(h);
+    StrNCopy(p, init, (Int16)(cap - 1));
+    p[cap - 1] = '\0';
+    MemHandleUnlock(h);
+    FldSetTextHandle(fld, h);
+    FldDrawField(fld);
+}
+
+static void FieldGetEditText(FieldType *fld, char *out, UInt16 cap)
+{
+    const char *p = FldGetTextPtr(fld);
+
+    StrNCopy(out, p ? p : "", (Int16)(cap - 1));
+    out[cap - 1] = '\0';
 }
 
 /* Shared by the WiFi-results and Browse-entries Lists: clamps gListTop to
@@ -584,11 +626,12 @@ static Boolean WifiFormHandleEvent(EventType *e)
 static void DoWifiConnect(FormType *frm)
 {
     NetConfig nc;
-    ControlType *lbl = (ControlType *)GetObj(frm, WifiSsidLabel);
     UInt8 i;
     Boolean ok = false;
     Boolean failed = false;
 
+    FieldGetEditText((FieldType *)GetObj(frm, WifiPasswordField),
+                     gWifiPasswordBuf, sizeof(gWifiPasswordBuf));
     MemSet(&nc, sizeof(nc), 0);
     StrNCopy(nc.ssid, gWifiSelectedSsid, sizeof(nc.ssid) - 1);
     StrNCopy(nc.password, gWifiPasswordBuf, sizeof(nc.password) - 1);
@@ -599,7 +642,7 @@ static void DoWifiConnect(FormType *frm)
         return;
     }
 
-    CtlSetLabel(lbl, "Connecting...");
+    DrawTextLine("Connecting...", 6, 18, 136);
 
     for (i = 0; i < 15; i++) {
         EventType e2;
@@ -639,23 +682,14 @@ static Boolean WifiPasswordHandleEvent(EventType *e)
     switch (e->eType) {
     case frmOpenEvent: {
         FormType *frm = FrmGetActiveForm();
-        ControlType *lbl = (ControlType *)GetObj(frm, WifiSsidLabel);
         FieldType *fld = (FieldType *)GetObj(frm, WifiPasswordField);
 
         FrmDrawForm(frm);
-        CtlSetLabel(lbl, gWifiSelectedSsid);
+        DrawTextLine(gWifiSelectedSsid, 6, 18, 136);
         MemSet(gWifiPasswordBuf, sizeof(gWifiPasswordBuf), 0);
-        FldSetTextPtr(fld, gWifiPasswordBuf);
-        FldRecalculateField(fld, true);
+        FieldSetEditText(fld, "", sizeof(gWifiPasswordBuf));
+        FrmSetFocus(frm, FrmGetObjectIndex(frm, WifiPasswordField));
         return true;
-    }
-
-    case frmCloseEvent: {
-        FormType *frm = FrmGetActiveForm();
-        FieldType *fld = (FieldType *)GetObj(frm, WifiPasswordField);
-
-        FldSetTextPtr(fld, 0);
-        return false;
     }
 
     case ctlSelectEvent:
@@ -759,17 +793,9 @@ static Boolean HostEditHandleEvent(EventType *e)
         FieldType *fld = (FieldType *)GetObj(frm, HostEditField);
 
         FrmDrawForm(frm);
-        FldSetTextPtr(fld, gEditBuf);
-        FldRecalculateField(fld, true);
+        FieldSetEditText(fld, gEditBuf, sizeof(gEditBuf));
+        FrmSetFocus(frm, FrmGetObjectIndex(frm, HostEditField));
         return true;
-    }
-
-    case frmCloseEvent: {
-        FormType *frm = FrmGetActiveForm();
-        FieldType *fld = (FieldType *)GetObj(frm, HostEditField);
-
-        FldSetTextPtr(fld, 0);
-        return false;
     }
 
     case ctlSelectEvent:
@@ -778,6 +804,8 @@ static Boolean HostEditHandleEvent(EventType *e)
             return true;
         }
         if (e->data.ctlSelect.controlID == HostEditOkButton) {
+            FieldGetEditText((FieldType *)GetObj(FrmGetActiveForm(), HostEditField),
+                             gEditBuf, sizeof(gEditBuf));
             MemSet(gHostSlots[gEditSlotIdx], sizeof(gHostSlots[gEditSlotIdx]), 0);
             StrNCopy((char *)gHostSlots[gEditSlotIdx], gEditBuf, sizeof(gHostSlots[gEditSlotIdx]) - 1);
             if (!fuji_put_host_slots(gHostSlots, HOST_SLOT_COUNT)) {
@@ -916,10 +944,13 @@ static void BrowseRelist(FormType *frm)
 {
     ListType *lst = (ListType *)GetObj(frm, BrowseList);
     ScrollBarType *bar = (ScrollBarType *)GetObj(frm, BrowseScrollBar);
-    char title[64];
 
-    StrPrintF(title, "%s:%s", gBrowseHostValue, gBrowsePath);
-    FrmCopyTitle(frm, title);
+    /* FrmSetTitle keeps a pointer, so the buffer must outlive the form.
+     * FrmCopyTitle can't be used: it overwrites the resource's title in
+     * place and a path longer than "Browse" tramples the list after it. */
+    StrPrintF(gBrowseTitle, "%s:", gBrowseHostValue);
+    StrNCat(gBrowseTitle, gBrowsePath, sizeof(gBrowseTitle));
+    FrmSetTitle(frm, gBrowseTitle);
 
     ListDirectory(gBrowseHostSlot, gBrowsePath);
 
@@ -1022,14 +1053,12 @@ static Boolean InstallConfirmHandleEvent(EventType *e)
     switch (e->eType) {
     case frmOpenEvent: {
         FormType *frm = FrmGetActiveForm();
-        ControlType *lbl;
         ControlType *runBtn;
         char msg[64];
 
         FrmDrawForm(frm);
-        lbl = (ControlType *)GetObj(frm, InstallConfirmLabel);
         StrPrintF(msg, "Install %s?", gInstallFilename);
-        CtlSetLabel(lbl, msg);
+        DrawTextLine(msg, 6, 18, 136);
         runBtn = (ControlType *)GetObj(frm, InstallRunButton);
         CtlSetEnabled(runBtn, gInstallCanRun);
         return true;

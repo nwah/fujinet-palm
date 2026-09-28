@@ -28,7 +28,7 @@ BEGIN
 
     BUTTON "Scan" ID WifiScanButton AT (4 16 40 14) FONT 0
 
-    LIST ID WifiList AT (4 34 146 96) NONUSABLE FONT 0
+    LIST ID WifiList AT (4 34 146 96) FONT 0
     SCROLLBAR ID WifiScrollBar AT (150 34 7 96) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
 
     BUTTON "Done" ID WifiDoneButton AT (114 142 40 14) FONT 0
@@ -41,7 +41,6 @@ SAVEBEHIND
 BEGIN
     TITLE "Connect"
 
-    LABEL "" ID WifiSsidLabel AT (6 18) FONT 0
     FIELD ID WifiPasswordField AT (6 32 136 12) EDITABLE UNDERLINED SINGLELINE MAXCHARS 63 FONT 0
 
     BUTTON "Connect" ID WifiConnectButton AT (6  50 60 14) FONT 0
@@ -53,7 +52,7 @@ NOFRAME
 BEGIN
     TITLE "Host Slots"
 
-    LIST ID HostsList AT (4 16 152 114) NONUSABLE FONT 0
+    LIST ID HostsList AT (4 16 152 114) FONT 0
 
     BUTTON "Browse" ID HostsBrowseButton AT (4   140 60 14) FONT 0
     BUTTON "Done"   ID HostsDoneButton   AT (114 140 40 14) FONT 0
@@ -77,7 +76,7 @@ NOFRAME
 BEGIN
     TITLE "Browse"
 
-    LIST ID BrowseList AT (4 16 146 122) NONUSABLE FONT 0
+    LIST ID BrowseList AT (4 16 146 122) FONT 0
     SCROLLBAR ID BrowseScrollBar AT (150 16 7 122) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
 
     BUTTON "Done" ID BrowseDoneButton AT (114 142 40 14) FONT 0
@@ -90,7 +89,6 @@ SAVEBEHIND
 BEGIN
     TITLE "Install"
 
-    LABEL "" ID InstallConfirmLabel AT (6 18) FONT 0
 
     BUTTON "Install" ID InstallInstallButton AT (4  40 44 14) FONT 0
     BUTTON "Run"     ID InstallRunButton     AT (52 40 40 14) FONT 0
