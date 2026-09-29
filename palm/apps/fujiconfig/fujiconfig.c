@@ -101,7 +101,16 @@ static Int16 gListTop = 0;
 static char gInstallFilename[BROWSE_NAME_CAP];
 static char gInstallPath[300];       /* full remote path, e.g. "/palm/x.prc" */
 static char gInstallDeviceSpec[300]; /* "N:SD:/..." or "N:TNFS://host/..." */
-static Boolean gInstallRun = false;
+static Boolean gInstallRun = false;  /* Run: a temporary install, see RunTemporarily */
+
+/* The app being run temporarily, remembered (unsaved preference) until it
+ * is deleted, so a reset while it runs doesn't leave it behind. */
+#define TEMP_APP_PREF_ID      3
+#define TEMP_APP_PREF_VERSION 1
+typedef struct {
+    UInt32 creator;
+    char   name[dmDBNameLength];
+} TempAppPref;
 static Boolean gInstallCanRun = false;
 static UInt32 gInstallTotalBytes = 0;
 static char gInstallStatusLine[48] = "";
@@ -1139,16 +1148,89 @@ static Err InstallReadProc(void *dataP, UInt32 *sizeP, void *userDataP)
     return errNone;
 }
 
+/* Run of an app that is already installed: its database, found by
+ * InstallDeleteProc instead of replacing it. */
+static LocalID gRunExistingID;
+
 static Boolean InstallDeleteProc(const char *nameP, UInt16 version, UInt16 cardNo, LocalID dbID, void *userDataP)
 {
     UInt16 curCard;
     LocalID curID;
 
+    if (gInstallRun) {
+        /* Keep the installed copy: Run launches it instead of replacing it
+         * with one that would be deleted afterwards. */
+        gRunExistingID = dbID;
+        return false;
+    }
     if (SysCurAppDatabase(&curCard, &curID) == errNone && curCard == cardNo && curID == dbID) {
         return false; /* refuse to delete ourselves */
     }
     DmDeleteDatabase(cardNo, dbID);
     return true;
+}
+
+/* Deletes the app recorded by RunTemporarily, if it is still there. */
+static void DeleteTempApp(void)
+{
+    TempAppPref pref;
+    UInt16 size = sizeof(pref);
+    UInt32 creator = 0;
+    LocalID id;
+
+    if (PrefGetAppPreferences(FUJI_PALMOS_PREF_CREATOR, TEMP_APP_PREF_ID, &pref, &size, false)
+            != TEMP_APP_PREF_VERSION || size != sizeof(pref)) {
+        return;
+    }
+    pref.name[sizeof(pref.name) - 1] = '\0';
+    id = DmFindDatabase(0, pref.name);
+    if (id != 0 && DmDatabaseInfo(0, id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, &creator) == errNone
+        && creator == pref.creator) {
+        DmDeleteDatabase(0, id);
+    }
+    PrefSetAppPreferences(FUJI_PALMOS_PREF_CREATOR, TEMP_APP_PREF_ID, TEMP_APP_PREF_VERSION,
+                          NULL, 0, false);
+}
+
+/* Run: starts the just-installed app nested inside FujiConfig
+ * (SysAppLaunch rather than SysUIAppSwitch), so control comes back here
+ * when it exits and the app can be deleted straight away. Its own data
+ * and preferences are left alone. Leaving the app (Home, another app)
+ * stops it; FujiConfig then deletes it and quits too, so the switch the
+ * user asked for goes ahead. */
+static void RunTemporarily(UInt16 cardNo, LocalID dbID)
+{
+    TempAppPref pref;
+    UInt32 type = 0, result = 0;
+    EventType stop;
+
+    MemSet(&pref, sizeof(pref), 0);
+    if (DmDatabaseInfo(cardNo, dbID, pref.name, 0, 0, 0, 0, 0, 0, 0, 0, &type, &pref.creator) != errNone
+        || type != sysFileTApplication) {
+        return;
+    }
+    PrefSetAppPreferences(FUJI_PALMOS_PREF_CREATOR, TEMP_APP_PREF_ID, TEMP_APP_PREF_VERSION,
+                          &pref, sizeof(pref), false);
+
+    /* The app may use the link itself, and needs the memory. */
+    if (fuji_palmos_is_open()) {
+        fuji_palmos_close();
+    }
+    FreeBrowseEntries();
+    /* Close our forms while our globals are current: the app's first
+     * FrmGotoForm would otherwise close them and call our handlers with
+     * its globals in place. */
+    FrmCloseAllForms();
+
+    SysAppLaunch(cardNo, dbID, sysAppLaunchFlagNewGlobals, sysAppLaunchCmdNormalLaunch, NULL, &result);
+
+    DeleteTempApp();
+
+    /* The app normally stops on an appStopEvent that was meant for the
+     * whole UI app (Home, or another app); quit as well. */
+    MemSet(&stop, sizeof(stop), 0);
+    stop.eType = appStopEvent;
+    EvtAddEventToQueue(&stop);
 }
 
 static void RunInstall(FormType *frm)
@@ -1172,9 +1254,18 @@ static void RunInstall(FormType *frm)
         return;
     }
 
+    gRunExistingID = 0;
     err = ExgDBRead(InstallReadProc, InstallDeleteProc, 0, &dbID, cardNo, &needReset, true);
     network_close(gInstallDeviceSpec);
 
+    if (gInstallRun && gRunExistingID != 0) {
+        /* Already installed: just open it, as a normal (permanent) app. */
+        if (fuji_palmos_is_open()) {
+            fuji_palmos_close();
+        }
+        SysUIAppSwitch(0, gRunExistingID, sysAppLaunchCmdNormalLaunch, 0);
+        return;
+    }
     if (err != errNone) {
         ShowError("Install failed", "");
         StrCopy(gInstallStatusLine, "Failed.");
@@ -1186,16 +1277,7 @@ static void RunInstall(FormType *frm)
     DrawInstallStatus(frm);
 
     if (gInstallRun) {
-        UInt32 type = 0;
-        UInt32 creator = 0;
-
-        if (DmDatabaseInfo(cardNo, dbID, 0, 0, 0, 0, 0, 0, 0, 0, 0, &type, &creator) == errNone
-            && type == sysFileTApplication) {
-            if (fuji_palmos_is_open()) {
-                fuji_palmos_close();
-            }
-            SysUIAppSwitch(cardNo, dbID, sysAppLaunchCmdNormalLaunch, 0);
-        }
+        RunTemporarily(cardNo, dbID);
     }
 }
 
@@ -1295,6 +1377,7 @@ UInt32 PilotMain(UInt16 cmd, MemPtr cmdPBP, UInt16 launchFlags)
     }
 
     ReleaseNetShim();
+    DeleteTempApp();   /* left over if a reset interrupted a Run */
     LoadLinkPref();
     SaveLinkPref(); /* make sure the defaults exist for the other apps */
     FrmGotoForm(MainForm);
