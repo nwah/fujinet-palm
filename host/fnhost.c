@@ -300,6 +300,7 @@ static int cmd_ls(FnCtx *ctx, int argc, char **argv)
     int rc = 0;
     int cap;
     int have_dir = 0;
+    int ext = getenv("FN_LS_EXT") != NULL;   /* extended entries: date, size, flags */
 
     if (argc < 2) {
         fprintf(stderr, "usage: ls SLOT [PATH]\n");
@@ -322,7 +323,7 @@ static int cmd_ls(FnCtx *ctx, int argc, char **argv)
     for (cap = 0; cap < 10000; cap++) {
         char buf[256];
         fn_bool end = FN_FALSE;
-        e = fn_fuji_read_directory(ctx, 255, 0, buf, &end);
+        e = fn_fuji_read_directory(ctx, 255, ext ? 0x80 : 0, buf, &end);
         if (e != FN_OK) {
             rc = fail("ls", e);
             break;
@@ -330,7 +331,16 @@ static int cmd_ls(FnCtx *ctx, int argc, char **argv)
         if (end) {
             break;
         }
-        printf("%s\n", buf);
+        if (ext) {
+            /* 12-byte details (rs232Fuji::set_additional_direntry_details):
+             * date y-70,m,d,h,m,s; size u32 LE; flags; mediatype. */
+            const unsigned char *d = (const unsigned char *)buf;
+            unsigned long size = d[6] | (d[7] << 8) | ((unsigned long)d[8] << 16) | ((unsigned long)d[9] << 24);
+            printf("%04d-%02d-%02d %8lu flags=%02x media=%02x  %s\n", d[0] + 1970, d[1], d[2],
+                   size, d[10], d[11], buf + 12);
+        } else {
+            printf("%s\n", buf);
+        }
     }
 
     if (have_dir) {

@@ -29,6 +29,7 @@ extern "C" {
 #define FN_DISK_MODE_READ  0x01
 #define FN_DISK_MODE_WRITE 0x02
 
+#define FN_DIR_PATH_LEN 256        /* fixed size of the open-directory "path\0filter" payload */
 #define FN_DIR_END 1               /* value written to *end by fn_fuji_read_directory at end-of-directory */
 
 /* Parsed (friendly) AdapterConfig. Wire layout is 140 raw bytes; see fn_fuji.c

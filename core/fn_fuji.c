@@ -408,23 +408,27 @@ FnErr fn_fuji_open_directory(FnCtx *ctx, fn_u8 host_slot, const char *path, cons
     fn_params_none(&p);
     fn_params_add_u8(&p, host_slot);
 
+    /* The firmware reads a fixed FN_DIR_PATH_LEN-byte area, "path\0filter\0"
+     * zero-padded, and NAKs a shorter payload. */
+    fn_memset(ctx->scratch, 0, FN_DIR_PATH_LEN);
     plen = fn_strlen(path);
+    if (plen > FN_DIR_PATH_LEN - 2) {
+        plen = FN_DIR_PATH_LEN - 2;
+    }
     fn_memcpy(ctx->scratch, (const fn_u8 *)path, plen);
-    len = plen;
-    ctx->scratch[len] = 0;
-    len = (fn_u16)(len + 1);
+    len = (fn_u16)(plen + 1);
 
     if (filter != NULL) {
         fn_u16 flen;
 
         flen = fn_strlen(filter);
+        if (flen > FN_DIR_PATH_LEN - 1 - len) {
+            flen = (fn_u16)(FN_DIR_PATH_LEN - 1 - len);
+        }
         fn_memcpy(ctx->scratch + len, (const fn_u8 *)filter, flen);
-        len = (fn_u16)(len + flen);
-        ctx->scratch[len] = 0;
-        len = (fn_u16)(len + 1);
     }
 
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF7, &p, ctx->scratch, len, NULL, 0, NULL);
+    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF7, &p, ctx->scratch, FN_DIR_PATH_LEN, NULL, 0, NULL);
 }
 
 /* fujiDevice.cpp:102-104: ctor lambda reads packet.param(0)=maxlen (as u8),
