@@ -60,6 +60,7 @@ fnnl_own_table:
 	dc.w	FnNLInstall - fnnl_own_table		| 5: sysLibTrapCustom+0 = fnNLTrapInstall
 	dc.w	FnNLRemove - fnnl_own_table			| 6: sysLibTrapCustom+1 = fnNLTrapRemove
 	dc.w	FnNLGetStatus - fnnl_own_table		| 7: sysLibTrapCustom+2 = fnNLTrapGetStatus
+	dc.w	FnNLDisconnect - fnnl_own_table		| 8: sysLibTrapCustom+3 = fnNLTrapDisconnect
 
 fnnl_own_name:
 	.ascii "FujiNet NetLib\0"

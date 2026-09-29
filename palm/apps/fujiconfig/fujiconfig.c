@@ -25,6 +25,7 @@
 #include "fujinet-palmos.h"
 #include <PalmOS.h>
 #include "fujiconfig_rsc.h"
+#include "fnnetlib.h"
 
 #define NUMBUF_CAP 16
 
@@ -1273,6 +1274,17 @@ static Boolean AppHandleEvent(EventType *e)
     return false;
 }
 
+/* An app that used the NetLib shim may have exited without closing it,
+ * leaving the serial port held; take it back before using the link. */
+static void ReleaseNetShim(void)
+{
+    UInt16 ref;
+
+    if (SysLibFind(fnNLLibName, &ref) == errNone) {
+        FnNLDisconnect(ref);
+    }
+}
+
 UInt32 PilotMain(UInt16 cmd, MemPtr cmdPBP, UInt16 launchFlags)
 {
     EventType e;
@@ -1282,6 +1294,7 @@ UInt32 PilotMain(UInt16 cmd, MemPtr cmdPBP, UInt16 launchFlags)
         return 0;
     }
 
+    ReleaseNetShim();
     LoadLinkPref();
     SaveLinkPref(); /* make sure the defaults exist for the other apps */
     FrmGotoForm(MainForm);

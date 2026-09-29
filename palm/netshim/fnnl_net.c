@@ -81,7 +81,6 @@ Err FnNLB_Open(UInt16 refNum, UInt16 *netIFErrsP)
 Err FnNLB_Close(UInt16 refNum, UInt16 immediate)
 {
     FnNLGlobals *g = FnNLGetGlobals();
-    UInt16       i;
 
     (void)refNum;
     (void)immediate;
@@ -90,18 +89,27 @@ Err FnNLB_Close(UInt16 refNum, UInt16 immediate)
         return netErrNotOpen;
 
     g->openCount--;
-    if (g->openCount == 0) {
-        for (i = 0; i < FNNL_MAX_SOCKETS; i++) {
-            if (g->sockets[i].inUse) {
-                fn_net_close(&g->ctx, g->sockets[i].unit);
-                g->sockets[i].inUse = false;
-            }
-        }
-        fn_ser_close(&g->port);
-        g->linkOpen = false;
-    }
+    if (g->openCount == 0)
+        FnNLShutdownLink(g);
 
     return errNone;
+}
+
+void FnNLShutdownLink(FnNLGlobals *g)
+{
+    UInt16 i;
+
+    for (i = 0; i < FNNL_MAX_SOCKETS; i++) {
+        if (g->sockets[i].inUse) {
+            if (g->linkOpen && g->sockets[i].connected)
+                fn_net_close(&g->ctx, g->sockets[i].unit);
+            g->sockets[i].inUse = false;
+        }
+    }
+    if (g->linkOpen)
+        fn_ser_close(&g->port);
+    g->linkOpen = false;
+    g->openCount = 0;
 }
 
 Err FnNLB_OpenCount(UInt16 refNum, UInt16 *countP)

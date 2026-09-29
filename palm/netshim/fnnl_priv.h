@@ -90,6 +90,9 @@ FnNLGlobals *FnNLGetGlobals(void);
  * the allocation itself fails. Used only by FnNLInstall(). */
 FnNLGlobals *FnNLGetOrCreateGlobals(void);
 
+/* Closes all sockets and the serial link and zeroes the open count. */
+void FnNLShutdownLink(FnNLGlobals *g);
+
 /* Maps an FnErr (FujiBus/core-library result) to the closest NetMgr.h
  * netErrXxx code. */
 Err FnNLMapFnErr(FnErr e);

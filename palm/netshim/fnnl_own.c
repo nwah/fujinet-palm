@@ -96,8 +96,7 @@ Err FnNLRemove(UInt16 refNum)
     if (g == NULL || !g->installed)
         return errNone; /* idempotent */
 
-    if (g->openCount > 0)
-        return netErrStillOpen;
+    FnNLShutdownLink(g);
 
     err = SysLibFind("Net.lib", &netRefNum);
     if (err != errNone)
@@ -110,6 +109,16 @@ Err FnNLRemove(UInt16 refNum)
     entry->dispatchTblP = g->origTbl;
     g->installed = false;
 
+    return errNone;
+}
+
+Err FnNLDisconnect(UInt16 refNum)
+{
+    FnNLGlobals *g = FnNLGetGlobals();
+
+    (void)refNum;
+    if (g != NULL)
+        FnNLShutdownLink(g);
     return errNone;
 }
 

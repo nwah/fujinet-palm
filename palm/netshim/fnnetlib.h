@@ -50,6 +50,7 @@ extern "C" {
 #define fnNLTrapInstall    (sysLibTrapCustom + 0)
 #define fnNLTrapRemove     (sysLibTrapCustom + 1)
 #define fnNLTrapGetStatus  (sysLibTrapCustom + 2)
+#define fnNLTrapDisconnect (sysLibTrapCustom + 3)
 
 /* Snapshot of the shim's internal state, for FnNLGetStatus(). */
 typedef struct FnNLStatusType {
@@ -73,12 +74,20 @@ typedef struct FnNLStatusType {
 Err FnNLInstall(UInt16 refNum)
     SYS_TRAP(fnNLTrapInstall);
 
-/* Restores the ROM's original Net.lib dispatch table. Refuses with
- * netErrStillOpen if our emulated NetLibOpen() count is nonzero (some app
- * still thinks Net.lib is open). Idempotent: calling this while not
- * installed just returns errNone. */
+/* Disconnects (see FnNLDisconnect), then restores the ROM's original
+ * Net.lib dispatch table. Idempotent: calling this while not installed
+ * just returns errNone. */
 Err FnNLRemove(UInt16 refNum)
     SYS_TRAP(fnNLTrapRemove);
+
+/* Closes every socket and the serial link and zeroes the open count, like
+ * "Disconnect" in the Network preferences panel. Many apps exit without
+ * NetLibClose, which would otherwise hold the serial port indefinitely.
+ * Only safe from a foreground app other than the one using the network,
+ * which Palm OS's single-tasking guarantees for any caller that isn't that
+ * app. A no-op if the shim was never installed. */
+Err FnNLDisconnect(UInt16 refNum)
+    SYS_TRAP(fnNLTrapDisconnect);
 
 /* Fills *statusP with the shim's current state. */
 Err FnNLGetStatus(UInt16 refNum, FnNLStatusType *statusP)
