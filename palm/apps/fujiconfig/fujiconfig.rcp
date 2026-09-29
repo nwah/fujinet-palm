@@ -100,6 +100,9 @@ BEGIN
     GADGET ID BrowseGrid AT (0 16 152 120)
     SCROLLBAR ID BrowseScrollBar AT (152 16 7 120) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
 
+    PUSHBUTTON "Grid" ID BrowseGridButton AT (4 143 30 12) GROUP BrowseViewGroup FONT 0
+    PUSHBUTTON "List" ID BrowseListButton AT (35 143 30 12) GROUP BrowseViewGroup FONT 0
+
     BUTTON "Done" ID BrowseDoneButton AT (114 142 40 14) FONT 0
 END
 
@@ -140,10 +143,15 @@ BEGIN
     BUTTONS "OK"
 END
 
-BITMAP ID IconFolder "icons/folder_l.bmp"
-BITMAP ID IconUp     "icons/up_l.bmp"
-BITMAP ID IconApp    "icons/app_l.bmp"
-BITMAP ID IconDb     "icons/db_l.bmp"
-BITMAP ID IconFile   "icons/file_l.bmp"
+BITMAP ID IconFolder     "icons/folder_l.bmp"
+BITMAP ID IconFolder + 1 "icons/folder_s.bmp"
+BITMAP ID IconUp         "icons/up_l.bmp"
+BITMAP ID IconUp + 1     "icons/up_s.bmp"
+BITMAP ID IconApp        "icons/app_l.bmp"
+BITMAP ID IconApp + 1    "icons/app_s.bmp"
+BITMAP ID IconDb         "icons/db_l.bmp"
+BITMAP ID IconDb + 1     "icons/db_s.bmp"
+BITMAP ID IconFile       "icons/file_l.bmp"
+BITMAP ID IconFile + 1   "icons/file_s.bmp"
 
 VERSION ID 1 "0.1"

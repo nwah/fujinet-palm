@@ -45,6 +45,9 @@
 #define BrowseForm           4000
 #define BrowseGrid           4010
 #define BrowseScrollBar      4011
+#define BrowseGridButton     4013
+#define BrowseListButton     4014
+#define BrowseViewGroup      1
 #define BrowseDoneButton     4012
 
 #define InstallConfirmDialog 4100

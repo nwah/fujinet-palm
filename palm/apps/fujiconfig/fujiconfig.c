@@ -1023,15 +1023,38 @@ static Boolean ListDirectory(UInt8 hostSlot, const char *path)
     return ok;
 }
 
-/* The Browse grid: GRID_COLS columns of icon-over-label cells in the
- * BrowseGrid gadget, scrolled a row at a time. */
-#define GRID_COLS    4
-#define GRID_CELL_W  38
-#define GRID_CELL_H  40
-#define GRID_ROWS    3      /* rows visible */
-#define GRID_LABEL_Y 25     /* label baseline offset within a cell */
+/* Browse entries in the BrowseGrid gadget, scrolled a row at a time,
+ * either as a grid of icon-over-label cells or as a list of small icons
+ * with full-width names. The choice is kept as unsaved preference
+ * ('FjNt', BROWSE_VIEW_PREF_ID). */
+#define BROWSE_VIEW_PREF_ID 4
+static Boolean gBrowseAsList = false;
+
+#define GRID_COLS    (gBrowseAsList ? 1 : 4)
+#define GRID_CELL_W  (gBrowseAsList ? 152 : 38)
+#define GRID_CELL_H  (gBrowseAsList ? 12 : 40)
+#define GRID_ROWS    (gBrowseAsList ? 10 : 3)   /* rows visible */
+#define GRID_LABEL_Y 25     /* grid: label offset within a cell */
+#define LIST_LABEL_X 20     /* list: label offset, after the small icon */
 
 static UInt16 gGridTop = 0;  /* first visible row */
+
+static void LoadBrowseView(void)
+{
+    UInt16 v = 0, size = sizeof(v);
+
+    if (PrefGetAppPreferences(FUJI_PALMOS_PREF_CREATOR, BROWSE_VIEW_PREF_ID, &v, &size, false) == 1
+        && size == sizeof(v)) {
+        gBrowseAsList = (Boolean)(v != 0);
+    }
+}
+
+static void SaveBrowseView(void)
+{
+    UInt16 v = gBrowseAsList ? 1 : 0;
+
+    PrefSetAppPreferences(FUJI_PALMOS_PREF_CREATOR, BROWSE_VIEW_PREF_ID, 1, &v, sizeof(v), false);
+}
 
 static UInt16 GridRowCount(void)
 {
@@ -1069,9 +1092,9 @@ static void GridCellRect(FormType *frm, UInt16 idx, RectangleType *r)
     r->extent.y = GRID_CELL_H;
 }
 
-/* Draws `text` centred in `width` at (x, y), cut short with an ellipsis if
- * it doesn't fit. */
-static void DrawCentredLabel(const char *text, Coord x, Coord y, Coord width)
+/* Draws `text` in `width` at (x, y), centred or left-aligned, cut short
+ * with an ellipsis if it doesn't fit. */
+static void DrawFitLabel(const char *text, Coord x, Coord y, Coord width, Boolean centre)
 {
     char buf[BROWSE_NAME_CAP + 2];
     Int16 w = width, len = (Int16)StrLen(text);
@@ -1080,7 +1103,7 @@ static void DrawCentredLabel(const char *text, Coord x, Coord y, Coord width)
 
     FntCharsInWidth(text, &w, &len, &fits);
     if (fits) {
-        WinDrawChars(text, len, (Coord)(x + (width - w) / 2), y);
+        WinDrawChars(text, len, centre ? (Coord)(x + (width - w) / 2) : x, y);
         return;
     }
     ChrHorizEllipsis(&ell);
@@ -1091,7 +1114,7 @@ static void DrawCentredLabel(const char *text, Coord x, Coord y, Coord width)
     buf[len] = ell;
     len++;
     w = FntCharsWidth(buf, len);
-    WinDrawChars(buf, len, (Coord)(x + (width - w) / 2), y);
+    WinDrawChars(buf, len, centre ? (Coord)(x + (width - w) / 2) : x, y);
 }
 
 static void GridDrawCell(FormType *frm, UInt16 idx, const BrowseEntry *e)
@@ -1102,17 +1125,27 @@ static void GridDrawCell(FormType *frm, UInt16 idx, const BrowseEntry *e)
 
     GridCellRect(frm, idx, &r);
     WinEraseRectangle(&r, 0);
-    h = DmGetResource(bitmapRsc, EntryIcon(e));
+    /* Small icons are the next bitmap ID after the large ones. */
+    h = DmGetResource(bitmapRsc, (UInt16)(EntryIcon(e) + (gBrowseAsList ? 1 : 0)));
     if (h) {
-        WinDrawBitmap((BitmapPtr)MemHandleLock(h), (Coord)(r.topLeft.x + (GRID_CELL_W - 32) / 2),
-                      (Coord)(r.topLeft.y + 1));
+        if (gBrowseAsList) {
+            WinDrawBitmap((BitmapPtr)MemHandleLock(h), (Coord)(r.topLeft.x + 2), (Coord)(r.topLeft.y + 1));
+        } else {
+            WinDrawBitmap((BitmapPtr)MemHandleLock(h), (Coord)(r.topLeft.x + (GRID_CELL_W - 32) / 2),
+                          (Coord)(r.topLeft.y + 1));
+        }
         MemHandleUnlock(h);
         DmReleaseResource(h);
     }
     if (StrCompare(label, "..") == 0) {
         label = "Up";
     }
-    DrawCentredLabel(label, r.topLeft.x, (Coord)(r.topLeft.y + GRID_LABEL_Y), GRID_CELL_W - 2);
+    if (gBrowseAsList) {
+        DrawFitLabel(label, (Coord)(r.topLeft.x + LIST_LABEL_X), r.topLeft.y,
+                     GRID_CELL_W - LIST_LABEL_X - 2, false);
+    } else {
+        DrawFitLabel(label, r.topLeft.x, (Coord)(r.topLeft.y + GRID_LABEL_Y), GRID_CELL_W - 2, true);
+    }
 }
 
 static void GridDraw(FormType *frm)
@@ -1240,6 +1273,8 @@ static Boolean BrowseFormHandleEvent(EventType *e)
 
     switch (e->eType) {
     case frmOpenEvent:
+        LoadBrowseView();
+        FrmSetControlGroupSelection(frm, BrowseViewGroup, gBrowseAsList ? BrowseListButton : BrowseGridButton);
         FrmDrawForm(frm);
         BrowseRelist(frm);
         return true;
@@ -1254,11 +1289,25 @@ static Boolean BrowseFormHandleEvent(EventType *e)
         return false;
 
     case ctlSelectEvent:
-        if (e->data.ctlSelect.controlID == BrowseDoneButton) {
+        switch (e->data.ctlSelect.controlID) {
+        case BrowseDoneButton:
             FrmGotoForm(MainForm);
             return true;
+        case BrowseGridButton:
+        case BrowseListButton:
+            if (gBrowseAsList != (e->data.ctlSelect.controlID == BrowseListButton)) {
+                /* Keep the same entries in view. */
+                UInt16 first = (UInt16)(gGridTop * GRID_COLS);
+
+                gBrowseAsList = (Boolean)(e->data.ctlSelect.controlID == BrowseListButton);
+                gGridTop = (UInt16)(first / GRID_COLS);
+                SaveBrowseView();
+                GridDraw(frm);
+            }
+            return true;
+        default:
+            return false;
         }
-        return false;
 
     case penDownEvent:
         idx = GridTrackTap(frm, e->screenX, e->screenY);
