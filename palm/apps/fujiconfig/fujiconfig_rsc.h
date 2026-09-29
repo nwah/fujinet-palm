@@ -10,6 +10,16 @@
 #define WifiButton           1015
 #define HostsButton          1016
 #define BrowseButton         1017
+#define MainHostsList        1020
+#define MainSettingsButton   1021
+
+#define MainMenu             1100
+#define MenuEditHosts        1101
+#define MenuSettings         1102
+#define MenuReconnect        1103
+
+#define SettingsForm         1500
+#define SettingsDoneButton   1510
 
 #define WifiForm             2000
 #define WifiScanButton       2010
@@ -25,7 +35,6 @@
 
 #define HostsForm            3000
 #define HostsList            3010
-#define HostsBrowseButton    3011
 #define HostsDoneButton      3012
 
 #define HostEditDialog       3100
@@ -34,7 +43,7 @@
 #define HostEditCancelButton 3103
 
 #define BrowseForm           4000
-#define BrowseList           4010
+#define BrowseGrid           4010
 #define BrowseScrollBar      4011
 #define BrowseDoneButton     4012
 
@@ -46,6 +55,13 @@
 
 #define InstallForm          5000
 #define InstallDoneButton    5010
+
+/* Browse grid icons (32x32, drawn in the top 22 rows). */
+#define IconFolder           7000
+#define IconUp               7020
+#define IconApp              7040
+#define IconDb               7050
+#define IconFile             7060
 
 #define GeneralAlert         9000
 #define InfoAlert            9001

@@ -15,7 +15,7 @@ fujiconfig: fujiconfig.c fujiconfig_rsc.h ../../netshim/fnnetlib.h $(LIBDIR)/lib
 $(LIBDIR)/libfujinet.palmos.a:
 	$(MAKE) -C $(FNLIB) palmos
 
-bin.stamp: fujiconfig.rcp fujiconfig_rsc.h
+bin.stamp: fujiconfig.rcp fujiconfig_rsc.h $(wildcard icons/*.bmp)
 	pilrc -q fujiconfig.rcp
 	touch $@
 

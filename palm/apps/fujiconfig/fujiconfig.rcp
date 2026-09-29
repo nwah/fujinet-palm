@@ -2,8 +2,29 @@
 
 FORM ID MainForm AT (0 0 160 160)
 NOFRAME
+MENUID MainMenu
 BEGIN
     TITLE "FujiNet"
+
+    LIST ID MainHostsList AT (4 30 152 99) FONT 0
+
+    BUTTON "Settings" ID MainSettingsButton AT (4 142 48 14) FONT 0
+END
+
+MENU ID MainMenu
+BEGIN
+    PULLDOWN "Options"
+    BEGIN
+        MENUITEM "Edit Host Slots" ID MenuEditHosts "E"
+        MENUITEM "Settings"        ID MenuSettings  "S"
+        MENUITEM "Reconnect"       ID MenuReconnect "R"
+    END
+END
+
+FORM ID SettingsForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Settings"
 
     LABEL "Link:" ID 1 AT (4 18) FONT 0
     POPUPTRIGGER "USB Library" ID LinkPopTrigger AT (34 16 90 12) LEFTANCHOR FONT 0
@@ -15,10 +36,10 @@ BEGIN
     POPUPLIST ID BaudPopTrigger BaudList
     LIST "115200" "57600" "38400" "19200" "9600" ID BaudList AT (34 30 50 55) NONUSABLE FONT 0
 
-    BUTTON "Connect" ID ConnectButton AT (4  46 36 14) FONT 0
-    BUTTON "WiFi"    ID WifiButton    AT (42 46 34 14) FONT 0
-    BUTTON "Hosts"   ID HostsButton   AT (78 46 34 14) FONT 0
-    BUTTON "Browse"  ID BrowseButton  AT (114 46 42 14) FONT 0
+    BUTTON "Connect" ID ConnectButton AT (4  46 44 14) FONT 0
+    BUTTON "WiFi"    ID WifiButton    AT (52 46 40 14) FONT 0
+
+    BUTTON "Done" ID SettingsDoneButton AT (114 142 40 14) FONT 0
 END
 
 FORM ID WifiForm AT (0 0 160 160)
@@ -50,11 +71,11 @@ END
 FORM ID HostsForm AT (0 0 160 160)
 NOFRAME
 BEGIN
-    TITLE "Host Slots"
+    TITLE "Edit Host Slots"
 
-    LIST ID HostsList AT (4 16 152 114) FONT 0
+    LIST ID HostsList AT (4 16 152 99) FONT 0
+    LABEL "Tap a slot to edit it." ID 3 AT (4 120) FONT 0
 
-    BUTTON "Browse" ID HostsBrowseButton AT (4   140 60 14) FONT 0
     BUTTON "Done"   ID HostsDoneButton   AT (114 140 40 14) FONT 0
 END
 
@@ -76,8 +97,8 @@ NOFRAME
 BEGIN
     TITLE "Browse"
 
-    LIST ID BrowseList AT (4 16 146 122) FONT 0
-    SCROLLBAR ID BrowseScrollBar AT (150 16 7 122) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
+    GADGET ID BrowseGrid AT (0 16 152 120)
+    SCROLLBAR ID BrowseScrollBar AT (152 16 7 120) MIN 0 MAX 0 VALUE 0 PAGESIZE 1
 
     BUTTON "Done" ID BrowseDoneButton AT (114 142 40 14) FONT 0
 END
@@ -118,5 +139,11 @@ BEGIN
     MESSAGE "^1"
     BUTTONS "OK"
 END
+
+BITMAP ID IconFolder "icons/folder_l.bmp"
+BITMAP ID IconUp     "icons/up_l.bmp"
+BITMAP ID IconApp    "icons/app_l.bmp"
+BITMAP ID IconDb     "icons/db_l.bmp"
+BITMAP ID IconFile   "icons/file_l.bmp"
 
 VERSION ID 1 "0.1"

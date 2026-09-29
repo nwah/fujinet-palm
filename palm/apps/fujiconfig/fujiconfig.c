@@ -355,39 +355,192 @@ static void SyncLinkPopups(FormType *frm)
 }
 
 /* ------------------------------------------------------------------ */
-/* Browse entry point shared by MainForm's Browse button (defaults to    */
-/* slot 0) and HostsForm's Browse button (uses the selected slot).       */
+/* Connection                                                           */
 /* ------------------------------------------------------------------ */
 
-static void StartBrowse(UInt8 hostSlot)
+static Boolean gHostSlotsValid = false;  /* gHostSlots read since connecting */
+static Boolean gTriedConnect = false;    /* the automatic connect has run */
+
+static void ClearAdapterInfo(void)
 {
-    if (!fuji_get_host_slots(gHostSlots, HOST_SLOT_COUNT)) {
-        ShowError("Could not read host slots", "");
+    gSsid[0] = '\0';
+    gHost[0] = '\0';
+    gIp[0] = '\0';
+    gFw[0] = '\0';
+}
+
+/* Opens the link, reads the adapter config and the host slots. `quiet`
+ * skips the error alerts (the automatic connect at launch). */
+static Boolean ConnectLink(Boolean quiet)
+{
+    AdapterConfig ac;
+
+    if (fuji_palmos_is_open()) {
+        fuji_palmos_close();
+    }
+    gHostSlotsValid = false;
+    ClearAdapterInfo();
+
+    /* Save the link on every Connect, not only when a popup changes: the
+     * other fujinet-lib apps open whatever the preference says, and a
+     * never-saved preference falls back to "Serial Library". */
+    SaveLinkPref();
+    if (!fuji_palmos_open((char *)kLibNames[gLinkIdx], kBauds[gBaudIdx])) {
+        if (!quiet) {
+            ShowError("Connect failed", "");
+        }
+        StrCopy(gConnLine, "Not connected");
+        return false;
+    }
+
+    if (fuji_get_adapter_config_extended(&gAdapterExt)) {
+        ClampedCopy(gSsid, sizeof(gSsid), gAdapterExt.ssid, sizeof(gAdapterExt.ssid));
+        ClampedCopy(gHost, sizeof(gHost), gAdapterExt.hostname, sizeof(gAdapterExt.hostname));
+        ClampedCopy(gIp, sizeof(gIp), gAdapterExt.sLocalIP, sizeof(gAdapterExt.sLocalIP));
+        ClampedCopy(gFw, sizeof(gFw), gAdapterExt.fn_version, sizeof(gAdapterExt.fn_version));
+    } else if (fuji_get_adapter_config(&ac)) {
+        ClampedCopy(gSsid, sizeof(gSsid), ac.ssid, sizeof(ac.ssid));
+        ClampedCopy(gHost, sizeof(gHost), ac.hostname, sizeof(ac.hostname));
+        StrPrintF(gIp, "%d.%d.%d.%d", ac.localIP[0], ac.localIP[1], ac.localIP[2], ac.localIP[3]);
+        ClampedCopy(gFw, sizeof(gFw), ac.fn_version, sizeof(ac.fn_version));
+    } else {
+        if (!quiet) {
+            ShowError("Could not read adapter config", "");
+        }
+        fuji_palmos_close();
+        StrCopy(gConnLine, "No answer from FujiNet");
+        return false;
+    }
+
+    gHostSlotsValid = fuji_get_host_slots(gHostSlots, HOST_SLOT_COUNT);
+    StrCopy(gConnLine, "Connected");
+    return true;
+}
+
+static Boolean RequireConnected(void)
+{
+    if (!fuji_palmos_is_open()) {
+        ShowInfo("Not connected to FujiNet. Check Settings.");
+        return false;
+    }
+    return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Home: host slots                                                     */
+/* ------------------------------------------------------------------ */
+
+static void HostsListDrawFunc(Int16 itemNum, RectangleType *bounds, Char **itemsText);
+
+static void DrawHomeStatus(FormType *frm)
+{
+    char line[48];
+
+    if (fuji_palmos_is_open() && gSsid[0] != '\0') {
+        StrPrintF(line, "Connected via %s", gSsid);
+    } else {
+        StrCopy(line, gConnLine);
+    }
+    DrawTextLine(line, 4, 17, 152);
+}
+
+static void HomeRelist(FormType *frm)
+{
+    ListType *lst = (ListType *)GetObj(frm, MainHostsList);
+
+    LstSetDrawFunction(lst, HostsListDrawFunc);
+    LstSetListChoices(lst, 0, gHostSlotsValid ? HOST_SLOT_COUNT : 0);
+    LstSetSelection(lst, noListSelection);
+    LstDrawList(lst);
+    DrawHomeStatus(frm);
+}
+
+static void OpenHostSlot(UInt16 slot)
+{
+    char name[32];
+
+    ClampedCopy(name, sizeof(name), (char *)gHostSlots[slot], sizeof(gHostSlots[slot]));
+    if (name[0] == '\0') {
+        /* An empty slot: edit it instead. */
+        gEditSlotIdx = slot;
+        gEditBuf[0] = '\0';
+        FrmPopupForm(HostEditDialog);
         return;
     }
-    gBrowseHostSlot = hostSlot;
-    ClampedCopy(gBrowseHostValue, sizeof(gBrowseHostValue),
-                (char *)gHostSlots[hostSlot], sizeof(gHostSlots[hostSlot]));
-    if (gBrowseHostValue[0] == '\0') {
-        ShowInfo("That host slot is empty.");
-        return;
-    }
+    gBrowseHostSlot = (UInt8)slot;
+    StrCopy(gBrowseHostValue, name);
     StrCopy(gBrowsePath, "/");
     FrmGotoForm(BrowseForm);
 }
 
+static Boolean MainFormHandleEvent(EventType *e)
+{
+    FormType *frm = FrmGetActiveForm();
+
+    switch (e->eType) {
+    case frmOpenEvent:
+        FrmDrawForm(frm);
+        if (!gTriedConnect && !fuji_palmos_is_open()) {
+            gTriedConnect = true;
+            StrCopy(gConnLine, "Connecting...");
+            DrawHomeStatus(frm);
+            ConnectLink(true);
+        }
+        HomeRelist(frm);
+        return true;
+
+    case frmUpdateEvent:
+        FrmDrawForm(frm);
+        HomeRelist(frm);
+        return true;
+
+    case lstSelectEvent:
+        if (e->data.lstSelect.listID == MainHostsList && e->data.lstSelect.selection >= 0) {
+            OpenHostSlot((UInt16)e->data.lstSelect.selection);
+            return true;
+        }
+        return false;
+
+    case ctlSelectEvent:
+        if (e->data.ctlSelect.controlID == MainSettingsButton) {
+            FrmGotoForm(SettingsForm);
+            return true;
+        }
+        return false;
+
+    case menuEvent:
+        switch (e->data.menu.itemID) {
+        case MenuEditHosts:
+            if (RequireConnected()) {
+                FrmGotoForm(HostsForm);
+            }
+            return true;
+        case MenuSettings:
+            FrmGotoForm(SettingsForm);
+            return true;
+        case MenuReconnect:
+            StrCopy(gConnLine, "Connecting...");
+            DrawHomeStatus(frm);
+            ConnectLink(false);
+            HomeRelist(frm);
+            return true;
+        default:
+            return false;
+        }
+
+    default:
+        return false;
+    }
+}
+
 /* ------------------------------------------------------------------ */
-/* MainForm                                                             */
+/* Settings                                                             */
 /* ------------------------------------------------------------------ */
 
-static void DrawMainStatus(FormType *frm)
+static void DrawSettingsInfo(FormType *frm)
 {
     RectangleType r;
     char line[96];
-
-    if (!frm) {
-        return;
-    }
 
     r.topLeft.x = 4;
     r.topLeft.y = 64;
@@ -406,81 +559,21 @@ static void DrawMainStatus(FormType *frm)
     WinDrawChars(gConnLine, StrLen(gConnLine), 4, 116);
 }
 
-static Boolean RequireConnected(void)
+static Boolean SettingsFormHandleEvent(EventType *e)
 {
-    if (!fuji_palmos_is_open()) {
-        ShowInfo("Connect first.");
-        return false;
-    }
-    return true;
-}
+    FormType *frm = FrmGetActiveForm();
 
-static void DoConnect(FormType *frm)
-{
-    if (fuji_palmos_is_open()) {
-        fuji_palmos_close();
-    }
-
-    /* Save the link on every Connect, not only when a popup changes: the
-     * other fujinet-lib apps open whatever the preference says, and a
-     * never-saved preference falls back to "Serial Library". */
-    SaveLinkPref();
-    if (!fuji_palmos_open((char *)kLibNames[gLinkIdx], kBauds[gBaudIdx])) {
-        ShowError("Connect failed", "");
-        gSsid[0] = '\0';
-        gHost[0] = '\0';
-        gIp[0] = '\0';
-        gFw[0] = '\0';
-        StrCopy(gConnLine, "Not connected");
-        DrawMainStatus(frm);
-        return;
-    }
-
-    if (fuji_get_adapter_config_extended(&gAdapterExt)) {
-        ClampedCopy(gSsid, sizeof(gSsid), gAdapterExt.ssid, sizeof(gAdapterExt.ssid));
-        ClampedCopy(gHost, sizeof(gHost), gAdapterExt.hostname, sizeof(gAdapterExt.hostname));
-        ClampedCopy(gIp, sizeof(gIp), gAdapterExt.sLocalIP, sizeof(gAdapterExt.sLocalIP));
-        ClampedCopy(gFw, sizeof(gFw), gAdapterExt.fn_version, sizeof(gAdapterExt.fn_version));
-    } else {
-        AdapterConfig ac;
-
-        if (fuji_get_adapter_config(&ac)) {
-            ClampedCopy(gSsid, sizeof(gSsid), ac.ssid, sizeof(ac.ssid));
-            ClampedCopy(gHost, sizeof(gHost), ac.hostname, sizeof(ac.hostname));
-            StrPrintF(gIp, "%d.%d.%d.%d", ac.localIP[0], ac.localIP[1], ac.localIP[2], ac.localIP[3]);
-            ClampedCopy(gFw, sizeof(gFw), ac.fn_version, sizeof(ac.fn_version));
-        } else {
-            ShowError("Could not read adapter config", "");
-            gSsid[0] = '\0';
-            gHost[0] = '\0';
-            gIp[0] = '\0';
-            gFw[0] = '\0';
-        }
-    }
-
-    StrCopy(gConnLine, "Connected");
-    DrawMainStatus(frm);
-}
-
-static Boolean MainFormHandleEvent(EventType *e)
-{
     switch (e->eType) {
-    case frmOpenEvent: {
-        FormType *frm = FrmGetActiveForm();
-
+    case frmOpenEvent:
         FrmDrawForm(frm);
         SyncLinkPopups(frm);
-        DrawMainStatus(frm);
+        DrawSettingsInfo(frm);
         return true;
-    }
 
-    case frmUpdateEvent: {
-        FormType *frm = FrmGetActiveForm();
-
+    case frmUpdateEvent:
         FrmDrawForm(frm);
-        DrawMainStatus(frm);
+        DrawSettingsInfo(frm);
         return true;
-    }
 
     case popSelectEvent:
         if (e->data.popSelect.controlID == LinkPopTrigger ||
@@ -494,8 +587,10 @@ static Boolean MainFormHandleEvent(EventType *e)
             if (fuji_palmos_is_open()) {
                 fuji_palmos_close();
             }
+            gHostSlotsValid = false;
+            ClearAdapterInfo();
             StrCopy(gConnLine, "Not connected");
-            DrawMainStatus(FrmGetActiveForm());
+            DrawSettingsInfo(frm);
             return false; /* let the default handler update the trigger label */
         }
         return false;
@@ -503,22 +598,18 @@ static Boolean MainFormHandleEvent(EventType *e)
     case ctlSelectEvent:
         switch (e->data.ctlSelect.controlID) {
         case ConnectButton:
-            DoConnect(FrmGetActiveForm());
+            StrCopy(gConnLine, "Connecting...");
+            DrawSettingsInfo(frm);
+            ConnectLink(false);
+            DrawSettingsInfo(frm);
             return true;
         case WifiButton:
             if (RequireConnected()) {
                 FrmGotoForm(WifiForm);
             }
             return true;
-        case HostsButton:
-            if (RequireConnected()) {
-                FrmGotoForm(HostsForm);
-            }
-            return true;
-        case BrowseButton:
-            if (RequireConnected()) {
-                StartBrowse(0);
-            }
+        case SettingsDoneButton:
+            FrmGotoForm(MainForm);
             return true;
         default:
             return false;
@@ -611,7 +702,7 @@ static Boolean WifiFormHandleEvent(EventType *e)
             return true;
         }
         if (e->data.ctlSelect.controlID == WifiDoneButton) {
-            FrmGotoForm(MainForm);
+            FrmGotoForm(SettingsForm);
             return true;
         }
         return false;
@@ -751,7 +842,8 @@ static Boolean HostsFormHandleEvent(EventType *e)
         ListType *lst = (ListType *)GetObj(frm, HostsList);
 
         FrmDrawForm(frm);
-        if (!fuji_get_host_slots(gHostSlots, HOST_SLOT_COUNT)) {
+        gHostSlotsValid = fuji_get_host_slots(gHostSlots, HOST_SLOT_COUNT);
+        if (!gHostSlotsValid) {
             ShowError("Could not read host slots", "");
         }
         gHostsSelectedIdx = noListSelection;
@@ -773,12 +865,6 @@ static Boolean HostsFormHandleEvent(EventType *e)
     case ctlSelectEvent:
         if (e->data.ctlSelect.controlID == HostsDoneButton) {
             FrmGotoForm(MainForm);
-            return true;
-        }
-        if (e->data.ctlSelect.controlID == HostsBrowseButton) {
-            UInt8 slot = (gHostsSelectedIdx != noListSelection) ? (UInt8)gHostsSelectedIdx : 0;
-
-            StartBrowse(slot);
             return true;
         }
         return false;
@@ -826,7 +912,8 @@ static Boolean HostEditHandleEvent(EventType *e)
                 ShowError("Could not save host slots", "");
             }
             FrmReturnToForm(0);
-            FrmUpdateForm(HostsForm, frmRedrawUpdateCode);
+            /* Opened from Home (an empty slot) or from Edit Host Slots. */
+            FrmUpdateForm(FrmGetFormId(FrmGetActiveForm()), frmRedrawUpdateCode);
             return true;
         }
         return false;
@@ -936,43 +1023,177 @@ static Boolean ListDirectory(UInt8 hostSlot, const char *path)
     return ok;
 }
 
-static void BrowseListDrawFunc(Int16 itemNum, RectangleType *bounds, Char **itemsText)
-{
-    BrowseEntry *entries;
-    char line[BROWSE_NAME_CAP + 4];
+/* The Browse grid: GRID_COLS columns of icon-over-label cells in the
+ * BrowseGrid gadget, scrolled a row at a time. */
+#define GRID_COLS    4
+#define GRID_CELL_W  38
+#define GRID_CELL_H  40
+#define GRID_ROWS    3      /* rows visible */
+#define GRID_LABEL_Y 25     /* label baseline offset within a cell */
 
-    if (!gBrowseEntriesH || itemNum < 0 || (UInt16)itemNum >= gBrowseCount) {
+static UInt16 gGridTop = 0;  /* first visible row */
+
+static UInt16 GridRowCount(void)
+{
+    return (UInt16)((gBrowseCount + GRID_COLS - 1) / GRID_COLS);
+}
+
+static UInt16 EntryIcon(const BrowseEntry *e)
+{
+    if (e->isDir) {
+        return StrCompare(e->name, "..") == 0 ? IconUp : IconFolder;
+    }
+    if (HasExtCI(e->name, ".prc")) {
+        return IconApp;
+    }
+    if (HasExtCI(e->name, ".pdb") || HasExtCI(e->name, ".pqa")) {
+        return IconDb;
+    }
+    return IconFile;
+}
+
+static void GridBounds(FormType *frm, RectangleType *r)
+{
+    FrmGetObjectBounds(frm, FrmGetObjectIndex(frm, BrowseGrid), r);
+}
+
+/* The screen rectangle of entry `idx`, which must be on a visible row. */
+static void GridCellRect(FormType *frm, UInt16 idx, RectangleType *r)
+{
+    RectangleType g;
+
+    GridBounds(frm, &g);
+    r->topLeft.x = (Coord)(g.topLeft.x + (idx % GRID_COLS) * GRID_CELL_W);
+    r->topLeft.y = (Coord)(g.topLeft.y + (idx / GRID_COLS - gGridTop) * GRID_CELL_H);
+    r->extent.x = GRID_CELL_W;
+    r->extent.y = GRID_CELL_H;
+}
+
+/* Draws `text` centred in `width` at (x, y), cut short with an ellipsis if
+ * it doesn't fit. */
+static void DrawCentredLabel(const char *text, Coord x, Coord y, Coord width)
+{
+    char buf[BROWSE_NAME_CAP + 2];
+    Int16 w = width, len = (Int16)StrLen(text);
+    Boolean fits;
+    Char ell;
+
+    FntCharsInWidth(text, &w, &len, &fits);
+    if (fits) {
+        WinDrawChars(text, len, (Coord)(x + (width - w) / 2), y);
         return;
     }
-    entries = (BrowseEntry *)MemHandleLock(gBrowseEntriesH);
-    if (entries[itemNum].isDir) {
-        StrPrintF(line, "%s/", entries[itemNum].name);
-    } else {
-        StrCopy(line, entries[itemNum].name);
+    ChrHorizEllipsis(&ell);
+    w = (Int16)(width - FntCharWidth(ell));
+    len = (Int16)StrLen(text);
+    FntCharsInWidth(text, &w, &len, &fits);
+    MemMove(buf, (void *)text, len);
+    buf[len] = ell;
+    len++;
+    w = FntCharsWidth(buf, len);
+    WinDrawChars(buf, len, (Coord)(x + (width - w) / 2), y);
+}
+
+static void GridDrawCell(FormType *frm, UInt16 idx, const BrowseEntry *e)
+{
+    RectangleType r;
+    MemHandle h;
+    const char *label = e->name;
+
+    GridCellRect(frm, idx, &r);
+    WinEraseRectangle(&r, 0);
+    h = DmGetResource(bitmapRsc, EntryIcon(e));
+    if (h) {
+        WinDrawBitmap((BitmapPtr)MemHandleLock(h), (Coord)(r.topLeft.x + (GRID_CELL_W - 32) / 2),
+                      (Coord)(r.topLeft.y + 1));
+        MemHandleUnlock(h);
+        DmReleaseResource(h);
     }
-    WinDrawChars(line, StrLen(line), bounds->topLeft.x, bounds->topLeft.y);
-    MemHandleUnlock(gBrowseEntriesH);
+    if (StrCompare(label, "..") == 0) {
+        label = "Up";
+    }
+    DrawCentredLabel(label, r.topLeft.x, (Coord)(r.topLeft.y + GRID_LABEL_Y), GRID_CELL_W - 2);
+}
+
+static void GridDraw(FormType *frm)
+{
+    RectangleType g;
+    const BrowseEntry *entries;
+    UInt16 idx, rows = GridRowCount();
+    UInt16 maxTop = rows > GRID_ROWS ? (UInt16)(rows - GRID_ROWS) : 0;
+
+    if (gGridTop > maxTop) {
+        gGridTop = maxTop;
+    }
+    GridBounds(frm, &g);
+    WinEraseRectangle(&g, 0);
+    if (gBrowseEntriesH) {
+        entries = (const BrowseEntry *)MemHandleLock(gBrowseEntriesH);
+        for (idx = (UInt16)(gGridTop * GRID_COLS);
+             idx < gBrowseCount && idx < (gGridTop + GRID_ROWS) * GRID_COLS; idx++) {
+            GridDrawCell(frm, idx, &entries[idx]);
+        }
+        MemHandleUnlock(gBrowseEntriesH);
+    }
+    SclSetScrollBar((ScrollBarType *)GetObj(frm, BrowseScrollBar), (Int16)gGridTop, 0,
+                    (Int16)maxTop, GRID_ROWS);
+}
+
+static void GridScroll(FormType *frm, Int16 rows)
+{
+    Int16 top = (Int16)gGridTop + rows;
+
+    gGridTop = (UInt16)(top < 0 ? 0 : top);
+    GridDraw(frm);
+}
+
+/* Handles a pen-down in the grid: highlights the cell while the pen is
+ * down, and returns the entry index if it comes up inside the same cell,
+ * else -1. */
+static Int16 GridTrackTap(FormType *frm, Coord x, Coord y)
+{
+    RectangleType g, r;
+    Int16 px, py;
+    Boolean down = true, inside = true, shown = true;
+    UInt16 idx;
+
+    GridBounds(frm, &g);
+    if (!RctPtInRectangle(x, y, &g)) {
+        return -1;
+    }
+    idx = (UInt16)((gGridTop + (y - g.topLeft.y) / GRID_CELL_H) * GRID_COLS
+                   + (x - g.topLeft.x) / GRID_CELL_W);
+    if ((x - g.topLeft.x) / GRID_CELL_W >= GRID_COLS || idx >= gBrowseCount) {
+        return -1;
+    }
+    GridCellRect(frm, idx, &r);
+    WinInvertRectangle(&r, 0);
+    while (down) {
+        EvtGetPen(&px, &py, &down);
+        inside = RctPtInRectangle(px, py, &r);
+        if (inside != shown) {
+            WinInvertRectangle(&r, 0);
+            shown = inside;
+        }
+    }
+    if (shown) {
+        WinInvertRectangle(&r, 0);
+    }
+    return inside ? (Int16)idx : -1;
 }
 
 static void BrowseRelist(FormType *frm)
 {
-    ListType *lst = (ListType *)GetObj(frm, BrowseList);
-    ScrollBarType *bar = (ScrollBarType *)GetObj(frm, BrowseScrollBar);
-
     /* FrmSetTitle keeps a pointer, so the buffer must outlive the form.
      * FrmCopyTitle can't be used: it overwrites the resource's title in
-     * place and a path longer than "Browse" tramples the list after it. */
+     * place and a path longer than "Browse" tramples the object after it. */
     StrPrintF(gBrowseTitle, "%s:", gBrowseHostValue);
     StrNCat(gBrowseTitle, gBrowsePath, sizeof(gBrowseTitle));
     FrmSetTitle(frm, gBrowseTitle);
 
     ListDirectory(gBrowseHostSlot, gBrowsePath);
-
-    gListTop = 0;
-    LstSetDrawFunction(lst, BrowseListDrawFunc);
-    LstSetListChoices(lst, 0, (Int16)gBrowseCount);
-    ListScrollSetup(lst, bar, (Int16)gBrowseCount);
-    LstDrawList(lst);
+    gGridTop = 0;
+    GridDraw(frm);
 }
 
 static void BrowseEntryTap(FormType *frm, Int16 sel)
@@ -1014,23 +1235,19 @@ static void BrowseEntryTap(FormType *frm, Int16 sel)
 
 static Boolean BrowseFormHandleEvent(EventType *e)
 {
-    switch (e->eType) {
-    case frmOpenEvent: {
-        FormType *frm = FrmGetActiveForm();
+    FormType *frm = FrmGetActiveForm();
+    Int16 idx;
 
+    switch (e->eType) {
+    case frmOpenEvent:
         FrmDrawForm(frm);
         BrowseRelist(frm);
         return true;
-    }
 
-    case frmUpdateEvent: {
-        FormType *frm = FrmGetActiveForm();
-        ListType *lst = (ListType *)GetObj(frm, BrowseList);
-
+    case frmUpdateEvent:
         FrmDrawForm(frm);
-        LstDrawList(lst);
+        GridDraw(frm);
         return true;
-    }
 
     case frmCloseEvent:
         FreeBrowseEntries();
@@ -1043,15 +1260,29 @@ static Boolean BrowseFormHandleEvent(EventType *e)
         }
         return false;
 
-    case lstSelectEvent:
-        if (e->data.lstSelect.listID == BrowseList) {
-            BrowseEntryTap(FrmGetActiveForm(), e->data.lstSelect.selection);
+    case penDownEvent:
+        idx = GridTrackTap(frm, e->screenX, e->screenY);
+        if (idx >= 0) {
+            BrowseEntryTap(frm, idx);
+            return true;
+        }
+        return false;
+
+    case keyDownEvent:
+        if (e->data.keyDown.chr == pageUpChr) {
+            GridScroll(frm, -GRID_ROWS);
+            return true;
+        }
+        if (e->data.keyDown.chr == pageDownChr) {
+            GridScroll(frm, GRID_ROWS);
             return true;
         }
         return false;
 
     case sclRepeatEvent:
-        return HandleListScroll(FrmGetActiveForm(), BrowseList, e);
+        gGridTop = (UInt16)e->data.sclRepeat.newValue;
+        GridDraw(frm);
+        return false;   /* keep the scroll bar repeating */
 
     default:
         return false;
@@ -1104,11 +1335,59 @@ static Boolean InstallConfirmHandleEvent(EventType *e)
 /* Install (progress) form                                              */
 /* ------------------------------------------------------------------ */
 
+/* Download size estimate for the progress bar, from the database header
+ * as it arrives: a .prc/.pdb header (78 bytes) is followed by its
+ * resource (10-byte) or record (8-byte) entries, each holding the offset
+ * where its data starts, so the largest offset is nearly the file size. */
+#define EST_BUF_LEN 512
+static UInt8 gEstBuf[EST_BUF_LEN];
+static UInt16 gEstLen;
+static UInt32 gInstallEstimate;   /* 0 until known */
+static Boolean gInstallDone;
+
+static UInt32 Be32(const UInt8 *p)
+{
+    return ((UInt32)p[0] << 24) | ((UInt32)p[1] << 16) | ((UInt32)p[2] << 8) | p[3];
+}
+
+static void EstimateFromHeader(const UInt8 *data, UInt32 n)
+{
+    UInt16 count, entry, offAt, i, fit;
+    UInt32 maxOff = 0;
+
+    if (gInstallEstimate != 0 || gEstLen >= EST_BUF_LEN) {
+        return;
+    }
+    if (n > (UInt32)(EST_BUF_LEN - gEstLen)) {
+        n = EST_BUF_LEN - gEstLen;
+    }
+    MemMove(gEstBuf + gEstLen, (void *)data, n);
+    gEstLen = (UInt16)(gEstLen + n);
+    if (gEstLen < 78) {
+        return;
+    }
+    count = (UInt16)((gEstBuf[76] << 8) | gEstBuf[77]);
+    entry = (gEstBuf[33] & dmHdrAttrResDB) ? 10 : 8;
+    offAt = (entry == 10) ? 6 : 0;
+    fit = (UInt16)((gEstLen - 78) / entry);
+    if (fit < count && gEstLen < EST_BUF_LEN) {
+        return;   /* wait for the whole table, or as much as fits */
+    }
+    for (i = 0; i < count && i < fit; i++) {
+        UInt32 off = Be32(gEstBuf + 78 + i * entry + offAt);
+
+        if (off > maxOff) {
+            maxOff = off;
+        }
+    }
+    gInstallEstimate = maxOff > 78 ? maxOff : 78;
+}
+
 static void DrawInstallStatus(FormType *frm)
 {
     RectangleType r;
-    char line[32];
-    char num[NUMBUF_CAP];
+    char line[40];
+    UInt32 pct = 0;
 
     if (!frm) {
         return;
@@ -1116,16 +1395,33 @@ static void DrawInstallStatus(FormType *frm)
 
     r.topLeft.x = 4;
     r.topLeft.y = 20;
-    r.extent.x = 150;
-    r.extent.y = 110;
+    r.extent.x = 152;
+    r.extent.y = 50;
     WinEraseRectangle(&r, 0);
 
     WinDrawChars(gInstallStatusLine, StrLen(gInstallStatusLine), 4, 20);
-
-    StrIToA(num, (Int32)gInstallTotalBytes);
-    StrCopy(line, num);
-    StrCat(line, " bytes");
+    if (gInstallEstimate != 0) {
+        StrPrintF(line, "%ld of about %ld bytes", (Int32)gInstallTotalBytes, (Int32)gInstallEstimate);
+        pct = gInstallDone ? 100 : (gInstallTotalBytes * 100) / gInstallEstimate;
+        if (pct > 99 && !gInstallDone) {
+            pct = 99;
+        }
+    } else {
+        StrPrintF(line, "%ld bytes", (Int32)gInstallTotalBytes);
+        pct = gInstallDone ? 100 : 0;
+    }
     WinDrawChars(line, StrLen(line), 4, 34);
+
+    /* Progress bar. */
+    r.topLeft.x = 8;
+    r.topLeft.y = 52;
+    r.extent.x = 144;
+    r.extent.y = 10;
+    WinDrawRectangleFrame(simpleFrame, &r);
+    r.extent.x = (Coord)((144 * pct) / 100);
+    if (r.extent.x > 0) {
+        WinDrawRectangle(&r, 0);
+    }
 }
 
 static Err InstallReadProc(void *dataP, UInt32 *sizeP, void *userDataP)
@@ -1142,6 +1438,7 @@ static Err InstallReadProc(void *dataP, UInt32 *sizeP, void *userDataP)
         return exgErrUnknown;
     }
     *sizeP = (UInt32)n;
+    EstimateFromHeader((const UInt8 *)dataP, (UInt32)n);
     gInstallTotalBytes += (UInt32)n;
     EvtResetAutoOffTimer();
     DrawInstallStatus(FrmGetActiveForm());
@@ -1242,7 +1539,10 @@ static void RunInstall(FormType *frm)
     FN_ERR nrc;
 
     gInstallTotalBytes = 0;
-    StrCopy(gInstallStatusLine, "Installing...");
+    gEstLen = 0;
+    gInstallEstimate = 0;
+    gInstallDone = false;
+    StrCopy(gInstallStatusLine, gInstallRun ? "Downloading..." : "Installing...");
     BuildDeviceSpec(gBrowseHostValue, gInstallPath, gInstallDeviceSpec, sizeof(gInstallDeviceSpec));
     DrawInstallStatus(frm);
 
@@ -1273,7 +1573,12 @@ static void RunInstall(FormType *frm)
         return;
     }
 
-    StrCopy(gInstallStatusLine, needReset ? "Installed (reset may be needed)." : "Installed.");
+    gInstallDone = true;
+    if (gInstallRun) {
+        StrCopy(gInstallStatusLine, "Launching...");
+    } else {
+        StrCopy(gInstallStatusLine, needReset ? "Installed (reset may be needed)." : "Installed.");
+    }
     DrawInstallStatus(frm);
 
     if (gInstallRun) {
@@ -1287,6 +1592,8 @@ static Boolean InstallFormHandleEvent(EventType *e)
     case frmOpenEvent: {
         FormType *frm = FrmGetActiveForm();
 
+        /* A literal: FrmSetTitle keeps the pointer. */
+        FrmSetTitle(frm, gInstallRun ? "Launching" : "Installing");
         FrmDrawForm(frm);
         RunInstall(frm);
         return true;
@@ -1326,6 +1633,9 @@ static Boolean AppHandleEvent(EventType *e)
         switch (formId) {
         case MainForm:
             FrmSetEventHandler(frm, MainFormHandleEvent);
+            break;
+        case SettingsForm:
+            FrmSetEventHandler(frm, SettingsFormHandleEvent);
             break;
         case WifiForm:
             FrmSetEventHandler(frm, WifiFormHandleEvent);
