@@ -34,6 +34,17 @@ Fuji Battleship's Palm version lives in the multi-platform game repo (a
 
 ## Prerequisites
 
+Other checkouts are expected next to this repo, wherever that is. Every
+path below is relative to the repo, and each has an override:
+
+```
+fujinet-lib-palmos/     fujinet-lib, palmos branch (FNLIB=)
+fujinet-firmware/       fujinet-pc is built here (FUJINET_BIN=)
+cloudpilot-emu/         emulator, optional (CLOUDPILOT=)
+palm-emu/               emulator session image, optional (EMU_IMAGE=)
+palmos-rs232/           this repo
+```
+
 - **Docker.** The Palm toolchain is amd64-only and runs under emulation on
   Apple Silicon. `docker/palm-build.sh` builds the image on first use.
 - **Node.js**, for the USB bridge and HotSync installer. `tools/install-prc.sh`
@@ -52,13 +63,14 @@ Fuji Battleship's Palm version lives in the multi-platform game repo (a
 - **fujinet-pc**, the desktop build of
   [fujinet-firmware](https://github.com/FujiNetWIFI/fujinet-firmware), RS232
   target. It must be a FujiBus-era build (2026 or later): older builds speak
-  the old DTR-framed protocol. In a fujinet-firmware checkout:
+  the old DTR-framed protocol.
 
   ```sh
-  ./build.sh -p RS232        # binary in build/dist/
+  git clone https://github.com/FujiNetWIFI/fujinet-firmware.git ../fujinet-firmware
+  (cd ../fujinet-firmware && ./build.sh -p RS232)    # binary in build/dist/
   ```
 
-  `run/run-fujinet.sh` runs `~/Atari/fn-build-rs232/fujinet` by default; set
+  `run/run-fujinet.sh` runs `../fujinet-firmware/build/dist/fujinet`; set
   `FUJINET_BIN` to use another binary.
 
 ## Building
@@ -171,9 +183,14 @@ bridged over TCP to fujinet-pc. Scripts can drive it: install, launch, tap,
 screenshot. See [docs/emulator-testing.md](docs/emulator-testing.md) for
 setup, tap coordinates and gotchas.
 
+It needs a CloudpilotEmu native build with the `--serial-tcp` option and
+the `tap` command: the `fujinet` branch of `../cloudpilot-emu`,
+which isn't published yet. It also needs a Palm V session image with setup
+done, in `../palm-emu/palmv-base.img`.
+
 ```sh
 # fujinet-pc must be listening on 1985, and nothing else connected to it
-tools/emu.sh start ~/fujinet/palm-emu/palmv-base.img --serial-tcp localhost:1985
+tools/emu.sh start --serial-tcp localhost:1985   # ../palm-emu/palmv-base.img
 tools/emu.sh cmd "install $PWD/palm/apps/fujiconfig/fujiconfig.prc" 'launch FujiNet'
 tools/emu.sh shot                 # PNG of the emulator window
 tools/emu.sh cmd "tap 80 150"     # tap at Palm screen coordinates

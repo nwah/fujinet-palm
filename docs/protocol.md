@@ -3,8 +3,8 @@
 This is the protocol that current `fujinet-firmware` RS-232 builds speak (FEP-004, which replaced the old DTR/SIO-style framing on 2026-01-02). Everything here was checked against the firmware source and a live fujinet-pc. The fujinet-pc run used here is `run/run-fujinet.sh`, which serves bus-over-IP on `localhost:1985`.
 
 Authoritative source:
-- `~/Atari/fujinet-firmware/lib/bus/rs232/FujiBusPacket.cpp`
-- `~/Atari/fujinet-firmware/lib/bus/rs232/rs232.cpp`
+- `../fujinet-firmware/lib/bus/rs232/FujiBusPacket.cpp`
+- `../fujinet-firmware/lib/bus/rs232/rs232.cpp`
 
 ## Link
 - 115200 8N1, with no flow control and no handshake lines. The baud rate comes from the firmware config (`serial_baud`) and is read at boot.
