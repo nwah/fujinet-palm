@@ -2,8 +2,10 @@
  *
  * FnLink -- serial/USB link test app for the FujiNet Palm OS transport.
  * Picks one of the three shared serial libraries a Handspring Visor
- * exposes, opens it through transport_ser's FnTransport binding, and runs
- * an echo test against a host-side bridge.
+ * exposes, opens it through fujinet-lib's own serial transport
+ * (bus/palmos/transport_ser, the one every fujinet-lib app uses) and runs
+ * an echo test against a host-side bridge (tools/visorbridge.js --echo).
+ * The Fuji button talks to FujiNet through fujinet-lib's public API.
  *
  * Targets Palm OS 3.1 / DragonBall EZ (Handspring Visor Deluxe). Built with
  * -palmos3.5 against the 3.5 SDK's <PalmOS.h> plus an explicit
@@ -13,10 +15,12 @@
  * the FnTransport vtable, so it doesn't care which serial manager is
  * underneath.
  */
+/* fujinet headers before PalmOS.h, see ../common/fnapp.h */
+#include "fujinet-fuji.h"
+#include "fujinet-palmos.h"
 #include <PalmOS.h>
+#include "transport_ser.h" /* fujinet-lib bus/palmos: the raw serial transport */
 #include "fnlink_rsc.h"
-#include "transport_ser.h"
-#include "fn_fuji.h"
 
 #define FN_ECHO_TIMEOUT_MS 3000uL
 #define FN_ECHO_SIZE       256
@@ -31,7 +35,6 @@
 static FnSerPort  gPort;
 static FnTransport gTransport;
 static UInt16     gSelectedLib = LibUsbButton;
-static FnCtx      gCtx;
 
 static char gLog[LOG_LINES][LOG_LINE_LEN];
 static UInt8 gLogUsed = 0;
@@ -307,59 +310,50 @@ static void DoEcho(void)
     LogAppend(msg);
 }
 
-/* FujiBus smoke test through the core: DEVICE_READY, then adapter config. */
-static void LogFnErr(const char *prefix, FnErr err)
+/* FujiBus smoke test through fujinet-lib: open the link on the selected
+ * library, read the adapter config, close. The raw echo port is closed
+ * first -- both would want the same serial library. */
+static void LogLinkErr(const char *prefix)
 {
     char msg[LOG_LINE_LEN];
     char num[12];
 
     StrCopy(msg, prefix);
     StrCat(msg, " err=");
-    StrIToA(num, (Int32)err);
-    StrCat(msg, num);
-    if (gPort.lastErr) {
-        StrCat(msg, " ser=");
-        StrIToH(num, (UInt32)(UInt16)gPort.lastErr);
-        StrCat(msg, num + 4);
-    }
+    StrIToH(num, (UInt32)fuji_palmos_last_error());
+    StrCat(msg, num + 4);
     LogAppend(msg);
 }
 
 static void DoFuji(void)
 {
-    FnErr err;
-    fn_u16 countA = 0;
-    FnAdapterConfig cfg;
+    static AdapterConfigExtended cfg;
     char msg[LOG_LINE_LEN];
     char num[12];
     UInt32 t0;
 
-    if (!gPort.open) {
-        LogAppend("FUJI: not open");
+    if (gPort.open) {
+        fn_ser_close(&gPort);
+        LogAppend("(echo port closed)");
+    }
+
+    if (!fuji_palmos_open(LibNameForId(gSelectedLib), 115200uL)) {
+        LogLinkErr("LINK");
         return;
     }
-    fn_init(&gCtx, &gTransport);
 
     t0 = TimGetTicks();
-    err = fn_fuji_device_ready(&gCtx, &countA);
-    if (err != FN_OK) {
-        LogFnErr("READY", err);
+    if (!fuji_get_adapter_config_extended(&cfg)) {
+        LogLinkErr("CONFIG");
+        fuji_palmos_close();
         return;
     }
-    StrCopy(msg, "READY ");
-    StrIToA(num, (Int32)countA);
-    StrCat(msg, num);
-    StrCat(msg, "xA ");
+    StrCopy(msg, "CONFIG ok ");
     StrIToA(num, (Int32)TicksToMs(TimGetTicks() - t0));
     StrCat(msg, num);
     StrCat(msg, "ms");
     LogAppend(msg);
 
-    err = fn_fuji_get_adapter_config(&gCtx, &cfg);
-    if (err != FN_OK) {
-        LogFnErr("CONFIG", err);
-        return;
-    }
     StrCopy(msg, "SSID ");
     StrNCat(msg, cfg.ssid, LOG_LINE_LEN);
     LogAppend(msg);
@@ -369,6 +363,8 @@ static void DoFuji(void)
     StrCopy(msg, "FN ");
     StrNCat(msg, cfg.fn_version, LOG_LINE_LEN);
     LogAppend(msg);
+
+    fuji_palmos_close();
 }
 
 static void DoX20(void)

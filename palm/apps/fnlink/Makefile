@@ -1,28 +1,21 @@
 CC = m68k-palmos-gcc
 CFLAGS = -O2 -Wall -palmos3.5
 
-CORE_DIR   = ../../../core
-PALM_DIR   = ../..
-COMPAT_DIR = compat_include
-
-# Order matters: core/'s fn_transport.h (once the core agent adds it) is
-# found before the generated compat fallback, which is found before
-# anything in palm/ itself.
-INCLUDES = -I$(CORE_DIR) -I$(COMPAT_DIR) -I$(PALM_DIR)
+# fujinet-lib: the public API for the Fuji test, and its bus/palmos serial
+# transport (transport_ser.h, fn_ser_*) for the raw echo test
+FNLIB ?= ../../../../fujinet-lib-palmos
+INCLUDES = -I$(FNLIB)/include -I$(FNLIB)/bus/palmos
+LIBDIR = $(FNLIB)/r2r/palmos
+LIBS = -L$(LIBDIR) -lfujinet.palmos
 
 fnlink.prc: fnlink fnlink.def bin.stamp
 	build-prc -o $@ fnlink.def fnlink *.bin
 
-fnlink: fnlink.c $(CORE_DIR)/fujibus.c $(CORE_DIR)/fn_fuji.c $(PALM_DIR)/transport_ser.c $(PALM_DIR)/transport_ser.h fnlink_rsc.h $(COMPAT_DIR)/fn_transport.h
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ fnlink.c $(CORE_DIR)/fujibus.c $(CORE_DIR)/fn_fuji.c $(PALM_DIR)/transport_ser.c
+fnlink: fnlink.c fnlink_rsc.h $(LIBDIR)/libfujinet.palmos.a
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ fnlink.c $(LIBS)
 
-# Generated stand-in for core/fn_transport.h, used only until that file
-# exists (see palm/fn_transport_compat.h). Regenerated on every build; the
-# -I order above means it's simply never looked at once core/ provides the
-# real header.
-$(COMPAT_DIR)/fn_transport.h: $(PALM_DIR)/fn_transport_compat.h
-	mkdir -p $(COMPAT_DIR)
-	cp -f $(PALM_DIR)/fn_transport_compat.h $(COMPAT_DIR)/fn_transport.h
+$(LIBDIR)/libfujinet.palmos.a:
+	$(MAKE) -C $(FNLIB) palmos
 
 bin.stamp: fnlink.rcp fnlink_rsc.h
 	pilrc -q fnlink.rcp
@@ -30,4 +23,3 @@ bin.stamp: fnlink.rcp fnlink_rsc.h
 
 clean:
 	rm -f fnlink fnlink.prc *.bin bin.stamp
-	rm -rf $(COMPAT_DIR)

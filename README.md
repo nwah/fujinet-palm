@@ -16,11 +16,11 @@ link. That link can be:
 
 | Path | What |
 |---|---|
-| `core/` | Portable C FujiBus client: packet building, SLIP, Fuji and network devices |
+| `core/` | Portable C FujiBus client without globals, used by the NetLib shim and `host/`. fujinet-lib's `bus/palmos` carries a copy of its packet/SLIP layer: keep them in sync |
 | `host/` | `fnhost`, a Mac command-line FujiNet client, plus unit tests for `core/` |
-| `palm/transport_ser.c` | Palm Serial Manager transport ("USB Library", "BuiltIn SerLib", "Serial Library") |
+| `palm/transport_ser.c` | Palm Serial Manager transport ("USB Library", "BuiltIn SerLib", "Serial Library") for the NetLib shim; fujinet-lib carries a copy |
 | `palm/apps/fujiconfig` | **FujiConfig**: connect, WiFi, host slots, browse hosts, install or run `.prc`/`.pdb` files |
-| `palm/apps/fnlink` | Link test: open the port, echo, query FujiNet |
+| `palm/apps/fnlink` | Link test: raw echo through fujinet-lib's serial transport, then a FujiNet query |
 | `palm/apps/mastodon`, `news`, `weather`, `isstracker` | Network apps |
 | `palm/apps/nettest` | Installs/removes the NetLib shim and tests it |
 | `palm/apps/hello` | Minimal app, handy for install tests |
@@ -52,8 +52,8 @@ palmos-rs232/           this repo
   `tools/palm-sync` the first time it runs.
 - **fujinet-lib with the Palm OS platform**, the `palmos` branch of
   [nwah/fujinet-lib-experimental](https://github.com/nwah/fujinet-lib-experimental/tree/palmos),
-  checked out next to this repo as `../fujinet-lib-palmos`. FujiConfig, News,
-  Weather and ISS Tracker link against it. Override the location with
+  checked out next to this repo as `../fujinet-lib-palmos`. All the apps
+  except Hello and NetTest link against it. Override the location with
   `FNLIB=/path`.
 
   ```sh

@@ -87,18 +87,10 @@ FnErr fn_fuji_get_adapter_config_ext(FnCtx *ctx, FnAdapterConfigExt *out);
  * firmware comment; passed through as-is). */
 FnErr fn_fuji_get_wifi_status(FnCtx *ctx, fn_u8 *status);
 
-/* cmd 0xEA: read wifi-enabled flag (0 or 1). */
-FnErr fn_fuji_get_wifi_enabled(FnCtx *ctx, fn_u8 *enabled);
-
 /* cmd 0xFE: read the currently configured SSID/password. ssid must be at
  * least 34 bytes, pass at least 65 bytes; both are always NUL-terminated
  * by us on success. */
 FnErr fn_fuji_get_ssid(FnCtx *ctx, char ssid[34], char pass[65]);
-
-/* cmd 0xFB: set SSID/password. No wire params (see fn_fuji.c). ssid/pass are
- * ordinary NUL-terminated C strings; ssid is truncated to 32 bytes and pass
- * to 63 bytes on the wire, per the fixed 33/64-byte wire fields. */
-FnErr fn_fuji_set_ssid(FnCtx *ctx, const char *ssid, const char *pass);
 
 /* cmd 0xFD: trigger a wifi scan; *count receives the number of SSIDs found. */
 FnErr fn_fuji_scan_networks(FnCtx *ctx, fn_u8 *count);
@@ -111,22 +103,12 @@ FnErr fn_fuji_get_scan_result(FnCtx *ctx, fn_u8 idx, char ssid[34], fn_u8 *rssi)
  * directly into slots. Wire-exact; no extra NUL byte is added. */
 FnErr fn_fuji_read_host_slots(FnCtx *ctx, char slots[8][32]);
 
-/* cmd 0xF3: write all 8 host slot names (256 bytes total) from slots as-is. */
-FnErr fn_fuji_write_host_slots(FnCtx *ctx, const char slots[8][32]);
-
 /* cmd 0xF2: read all 8 device (disk) slots into slots[8]. Each name[35] is
  * always forced to 0 defensively. */
 FnErr fn_fuji_read_device_slots(FnCtx *ctx, FnDeviceSlot slots[8]);
 
-/* cmd 0xF1: write all 8 device (disk) slots from slots[8]. Each name is
- * copied verbatim (all 36 bytes, not strlen-bounded). */
-FnErr fn_fuji_write_device_slots(FnCtx *ctx, const FnDeviceSlot slots[8]);
-
 /* cmd 0xF9: mount a TNFS host by slot index. */
 FnErr fn_fuji_mount_host(FnCtx *ctx, fn_u8 slot);
-
-/* cmd 0xE6: unmount a TNFS host by slot index. */
-FnErr fn_fuji_unmount_host(FnCtx *ctx, fn_u8 slot);
 
 /* cmd 0xF7: open a directory listing on a host. filter may be NULL for no
  * filter/pattern. */
@@ -142,28 +124,6 @@ FnErr fn_fuji_read_directory(FnCtx *ctx, fn_u8 maxlen, fn_u8 flags, char *out, f
 
 /* cmd 0xF5: close the currently open directory listing. */
 FnErr fn_fuji_close_directory(FnCtx *ctx);
-
-/* cmd 0xE4: seek the open directory listing to entry index pos. */
-FnErr fn_fuji_set_directory_position(FnCtx *ctx, fn_u16 pos);
-
-/* cmd 0xE5: read the open directory listing's current entry index. */
-FnErr fn_fuji_get_directory_position(FnCtx *ctx, fn_u16 *pos);
-
-/* cmd 0xE2: set a device slot's full mount path. */
-FnErr fn_fuji_set_device_fullpath(FnCtx *ctx, fn_u8 dev_slot, fn_u8 host_slot, fn_u8 mode, const char *path);
-
-/* cmd 0xDA: read a device slot's full mount path. out_cap is the total size
- * of the out buffer including room for the terminating NUL; out_cap==0
- * returns FN_ERR_PARAM without making a bus call. out is always
- * NUL-terminated on success and never written to at or beyond
- * out[out_cap-1]. */
-FnErr fn_fuji_get_device_fullpath(FnCtx *ctx, fn_u8 dev_slot, char *out, fn_u16 out_cap);
-
-/* cmd 0xF8: mount a disk image already assigned to dev_slot, in the given mode. */
-FnErr fn_fuji_mount_image(FnCtx *ctx, fn_u8 dev_slot, fn_u8 mode);
-
-/* cmd 0xE9: unmount the disk image in dev_slot. */
-FnErr fn_fuji_unmount_image(FnCtx *ctx, fn_u8 dev_slot);
 
 #ifdef __cplusplus
 }

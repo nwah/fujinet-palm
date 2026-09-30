@@ -142,19 +142,4 @@ FnErr fn_net_query(FnCtx *ctx, fn_u8 unit, const char *query);
 FnErr fn_net_json_query(FnCtx *ctx, fn_u8 unit, const char *query,
                          char *out, fn_u16 max, fn_u16 *got);
 
-/*
- * Set HTTP channel mode for a network unit. Cmd 'M' (0x4D): sends a dummy
- * param0 (0) then mode as param1 (NDevice.cpp:805-821,
- * fujidev_http_set_channel_mode reads param_cast<...>(packet,1) -- same
- * index-1 pattern as fn_net_set_parser).
- */
-FnErr fn_net_set_http_mode(FnCtx *ctx, fn_u8 unit, fn_u8 mode);
-
-/*
- * Set translation mode for a network unit (FN_TRANS_* / raw values 1-4).
- * Cmd 'T' (0x54): sends a dummy param0 (0) then mode as param1
- * (NDevice.h:198-202, fujidev_set_translation reads packet.param(1)).
- */
-FnErr fn_net_set_translation(FnCtx *ctx, fn_u8 unit, fn_u8 mode);
-
 #endif /* FN_NET_H */

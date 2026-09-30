@@ -200,22 +200,6 @@ FnErr fn_fuji_get_wifi_status(FnCtx *ctx, fn_u8 *status)
     return FN_OK;
 }
 
-/* fujiDevice.cpp:578-589: no params; replies with exactly 1 byte (0 or 1). */
-FnErr fn_fuji_get_wifi_enabled(FnCtx *ctx, fn_u8 *enabled)
-{
-    FnErr err;
-    fn_u16 reply_len;
-
-    reply_len = 0;
-    err = fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xEA, NULL, NULL, 0,
-                       ctx->scratch, 1, &reply_len);
-    if (err != FN_OK) {
-        return err;
-    }
-    *enabled = ctx->scratch[0];
-    return FN_OK;
-}
-
 /* fujiDevice.cpp:414-446: SSIDConfig; no params; replies with exactly 97
  * bytes: char ssid[33]; char password[64]; */
 FnErr fn_fuji_get_ssid(FnCtx *ctx, char ssid[34], char pass[65])
@@ -234,32 +218,6 @@ FnErr fn_fuji_get_ssid(FnCtx *ctx, char ssid[34], char pass[65])
     fn_memcpy((fn_u8 *)pass, ctx->scratch + 33, 64);
     pass[64] = '\0';
     return FN_OK;
-}
-
-/* fujiDevice.cpp:69-71: SET_SSID is handled unconditionally by the base ctor
- * handler map (fujicmd_net_set_ssid_success(), taking no packet argument at
- * all) -- no wire params. Payload is exactly 97 bytes: 33 bytes of ssid
- * (NUL-padded) followed by 64 bytes of pass (NUL-padded). */
-FnErr fn_fuji_set_ssid(FnCtx *ctx, const char *ssid, const char *pass)
-{
-    fn_u16 ssid_len;
-    fn_u16 pass_len;
-
-    fn_memset(ctx->scratch, 0, 97);
-
-    ssid_len = fn_strlen(ssid);
-    if (ssid_len > 32) {
-        ssid_len = 32;
-    }
-    fn_memcpy(ctx->scratch, (const fn_u8 *)ssid, ssid_len);
-
-    pass_len = fn_strlen(pass);
-    if (pass_len > 63) {
-        pass_len = 63;
-    }
-    fn_memcpy(ctx->scratch + 33, (const fn_u8 *)pass, pass_len);
-
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xFB, NULL, ctx->scratch, 97, NULL, 0, NULL);
 }
 
 /* fujiDevice.cpp:494-504: no params; replies with exactly 1 byte, the count
@@ -320,14 +278,6 @@ FnErr fn_fuji_read_host_slots(FnCtx *ctx, char slots[8][32])
     return FN_OK;
 }
 
-/* fujiDevice.cpp:1438-1458: reads exactly sizeof(hostSlots) = 256 bytes via
- * transaction_get; no params. slots is already contiguous 256 bytes in the
- * right shape, so it is sent directly with no staging needed. */
-FnErr fn_fuji_write_host_slots(FnCtx *ctx, const char slots[8][32])
-{
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF3, NULL, slots, 256, NULL, 0, NULL);
-}
-
 /* fujiDevice.cpp:1575-1610: disk_slot; no params; replies with exactly 304
  * bytes = 8 * { u8 hostSlot; u8 mode; char filename[36]; } in that field
  * order. */
@@ -354,23 +304,6 @@ FnErr fn_fuji_read_device_slots(FnCtx *ctx, FnDeviceSlot slots[8])
     return FN_OK;
 }
 
-/* fujiDevice.cpp:1613 onward: reads exactly sizeof(disk_slot)*_totalDiskDevices
- * = 304 bytes via transaction_get; no params. Names are copied verbatim (all
- * 36 bytes), matching the firmware's own tolerance for non-NUL-padded input. */
-FnErr fn_fuji_write_device_slots(FnCtx *ctx, const FnDeviceSlot slots[8])
-{
-    fn_u8 i;
-    fn_u16 base;
-
-    for (i = 0; i < FN_DEVICE_SLOT_COUNT; i++) {
-        base = (fn_u16)(i * 38);
-        ctx->scratch[base + 0] = slots[i].host_slot;
-        ctx->scratch[base + 1] = slots[i].mode;
-        fn_memcpy(ctx->scratch + base + 2, (const fn_u8 *)slots[i].name, 36);
-    }
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF1, NULL, ctx->scratch, 304, NULL, 0, NULL);
-}
-
 /* fujiDevice.cpp:93-95: ctor lambda reads packet.param(0) as hostSlot. No
  * payload/reply data. */
 FnErr fn_fuji_mount_host(FnCtx *ctx, fn_u8 slot)
@@ -380,17 +313,6 @@ FnErr fn_fuji_mount_host(FnCtx *ctx, fn_u8 slot)
     fn_params_none(&p);
     fn_params_add_u8(&p, slot);
     return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF9, &p, NULL, 0, NULL, 0, NULL);
-}
-
-/* fujiDevice.cpp:119-121: ctor lambda reads packet.param(0) as hostSlot. No
- * payload/reply data. */
-FnErr fn_fuji_unmount_host(FnCtx *ctx, fn_u8 slot)
-{
-    FnParams p;
-
-    fn_params_none(&p);
-    fn_params_add_u8(&p, slot);
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xE6, &p, NULL, 0, NULL, 0, NULL);
 }
 
 /* fujiDevice.cpp:96-98: ctor lambda reads packet.param(0) as hostSlot.
@@ -470,112 +392,4 @@ FnErr fn_fuji_read_directory(FnCtx *ctx, fn_u8 maxlen, fn_u8 flags, char *out, f
 FnErr fn_fuji_close_directory(FnCtx *ctx)
 {
     return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF5, NULL, NULL, 0, NULL, 0, NULL);
-}
-
-/* fujiDevice.cpp:105-107: fujicmd_set_directory_position(uint16_t pos) --
- * ONE u16 param. */
-FnErr fn_fuji_set_directory_position(FnCtx *ctx, fn_u16 pos)
-{
-    FnParams p;
-
-    fn_params_none(&p);
-    fn_params_add_u16(&p, pos);
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xE4, &p, NULL, 0, NULL, 0, NULL);
-}
-
-/* fujiDevice.cpp:149-151: fujicore_get_directory_position returns uint16_t,
- * sent raw via transaction_send (little-endian on this protocol); no params.
- * Reply is 2 bytes, parsed explicitly rather than cast/overlaid. */
-FnErr fn_fuji_get_directory_position(FnCtx *ctx, fn_u16 *pos)
-{
-    FnErr err;
-    fn_u16 reply_len;
-
-    reply_len = 0;
-    err = fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xE5, NULL, NULL, 0,
-                       ctx->scratch, 2, &reply_len);
-    if (err != FN_OK) {
-        return err;
-    }
-    *pos = (fn_u16)(ctx->scratch[0] | (ctx->scratch[1] << 8));
-    return FN_OK;
-}
-
-/* fujiDevice.h:203-207: fujidev_set_device_fullpath reads packet.param(0)=
- * dev_slot, packet.param(1)=host_slot, packet.param(2)=mode, in that order.
- * Payload is path bytes plus a trailing NUL (harmless and simpler than
- * omitting it; the firmware's receive buffer is zero-initialized either way). */
-FnErr fn_fuji_set_device_fullpath(FnCtx *ctx, fn_u8 dev_slot, fn_u8 host_slot, fn_u8 mode, const char *path)
-{
-    FnParams p;
-    fn_u16 plen;
-
-    fn_params_none(&p);
-    fn_params_add_u8(&p, dev_slot);
-    fn_params_add_u8(&p, host_slot);
-    fn_params_add_u8(&p, mode);
-
-    plen = fn_strlen(path);
-    fn_memcpy(ctx->scratch, (const fn_u8 *)path, plen);
-    ctx->scratch[plen] = 0;
-
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xE2, &p, ctx->scratch, (fn_u16)(plen + 1), NULL, 0, NULL);
-}
-
-/* fujiDevice.cpp:111-113: ctor lambda reads packet.param(0) as dev_slot.
- * Reply is up to 256 bytes (MAX_FILENAME_LEN), NUL-terminated within that by
- * the firmware's zero-initialized buffer (fujiDevice.cpp:1282-1295). The
- * receive length is capped so it can never exceed out_cap-1, so the
- * terminator always fits inside out. */
-FnErr fn_fuji_get_device_fullpath(FnCtx *ctx, fn_u8 dev_slot, char *out, fn_u16 out_cap)
-{
-    FnParams p;
-    FnErr err;
-    fn_u16 reply_max;
-    fn_u16 reply_len;
-
-    if (out_cap == 0) {
-        return FN_ERR_PARAM;
-    }
-
-    fn_params_none(&p);
-    fn_params_add_u8(&p, dev_slot);
-
-    reply_max = (fn_u16)(out_cap - 1);
-    if (reply_max > 256) {
-        reply_max = 256;
-    }
-
-    reply_len = 0;
-    err = fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xDA, &p, NULL, 0,
-                       ctx->scratch, reply_max, &reply_len);
-    if (err != FN_OK) {
-        return err;
-    }
-    fn_memcpy((fn_u8 *)out, ctx->scratch, reply_len);
-    out[reply_len] = '\0';
-    return FN_OK;
-}
-
-/* fujiDevice.cpp:114-118: ctor lambda reads packet.param(0)=dev_slot,
- * packet.param(1)=mode, in that order. No payload/reply data. */
-FnErr fn_fuji_mount_image(FnCtx *ctx, fn_u8 dev_slot, fn_u8 mode)
-{
-    FnParams p;
-
-    fn_params_none(&p);
-    fn_params_add_u8(&p, dev_slot);
-    fn_params_add_u8(&p, mode);
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xF8, &p, NULL, 0, NULL, 0, NULL);
-}
-
-/* fujiDevice.cpp:122-124: ctor lambda reads packet.param(0) as dev_slot. No
- * payload/reply data. */
-FnErr fn_fuji_unmount_image(FnCtx *ctx, fn_u8 dev_slot)
-{
-    FnParams p;
-
-    fn_params_none(&p);
-    fn_params_add_u8(&p, dev_slot);
-    return fn_bus_call(ctx, FN_FUJI_DEVICE_ID, 0xE9, &p, NULL, 0, NULL, 0, NULL);
 }

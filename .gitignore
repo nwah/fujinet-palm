@@ -16,7 +16,6 @@ bin.stamp
 /palm/apps/isstracker/isstracker
 /palm/apps/weather/weather
 /palm/apps/news/news
-compat_include/
 /tools/node_modules/
 /tools/package-lock.json
 /tools/palm-sync/
