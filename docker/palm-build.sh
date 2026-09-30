@@ -7,7 +7,7 @@
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PARENT=$(dirname "$ROOT")
-IMAGE=${PALM_IMAGE:-palmos-rs232-toolchain}
+IMAGE=${PALM_IMAGE:-fujinet-palm-toolchain}
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     docker build --platform linux/amd64 -t "$IMAGE" "$ROOT/docker"
 fi

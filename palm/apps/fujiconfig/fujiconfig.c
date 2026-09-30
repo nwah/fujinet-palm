@@ -6,7 +6,7 @@
  *
  * Unlike ../mastodon and ../fnlink, this app talks to the adapter through
  * the standard fujinet-lib-palmos client library (the fuji_ and network_
- * functions), not palmos-rs232 own core/ FujiBus API. See
+ * functions), not fujinet-palm's own core/ FujiBus API. See
  * fujinet-lib-palmos/include/fujinet-fuji.h, fujinet-network.h and
  * fujinet-palmos.h.
  *

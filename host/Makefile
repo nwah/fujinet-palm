@@ -112,7 +112,7 @@ $(FNLIB_BUILD)/fujinet-bus-palmos.o: $(FNLIB)/bus/palmos/fujinet-bus-palmos.c | 
 $(FNLIB_BUILD)/fnlib_appkey.o: $(FNLIB)/bus/palmos/appkey.c | $(FNLIB_BUILD)
 	$(CC) $(FNLIB_CFLAGS) -c $< -o $@
 
-# ../core/fujibus.c, the palmos-rs232 original -- NOT the vendored copy at
+# ../core/fujibus.c, the fujinet-palm original -- NOT the vendored copy at
 # $(FNLIB)/bus/palmos/fujibus.c, which is never compiled by this target.
 $(FNLIB_BUILD)/fnlib_fujibus.o: ../core/fujibus.c | $(FNLIB_BUILD)
 	$(CC) $(FNLIB_CFLAGS) -c $< -o $@
