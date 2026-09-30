@@ -42,7 +42,7 @@ fujinet-lib-palmos/     fujinet-lib, palmos branch (FNLIB=)
 fujinet-firmware/       fujinet-pc is built here (FUJINET_BIN=)
 cloudpilot-emu/         emulator, optional (CLOUDPILOT=)
 palm-emu/               emulator session image, optional (EMU_IMAGE=)
-palmos-rs232/           this repo
+fujinet-palm/           this repo
 ```
 
 - **Docker.** The Palm toolchain is amd64-only and runs under emulation on
@@ -101,7 +101,7 @@ it mounts the parent directory, so `../fujinet-lib-palmos` builds in place.
 
 ```sh
 # 1. fujinet-lib for Palm OS (once, and after changing it)
-(cd ../fujinet-lib-palmos && ../palmos-rs232/docker/palm-build.sh make palmos)
+(cd ../fujinet-lib-palmos && ../fujinet-palm/docker/palm-build.sh make palmos)
 
 # 2. An app: palm/apps/<name>/<name>.prc
 docker/palm-build.sh make -C palm/apps/fujiconfig
