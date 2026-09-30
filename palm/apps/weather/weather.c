@@ -77,6 +77,14 @@ typedef struct {
 static Location gLoc;
 static Boolean gHaveLoc = false;
 
+/* Form title text. FrmSetTitle keeps the pointer, so this must be global
+ * (and FrmCopyTitle must not be used -- see fujiconfig.c). */
+/* Two title buffers, used alternately: FrmSetTitle erases the width of
+ * the title it is replacing by measuring that string, so the old one must
+ * still be intact when the new one is set. */
+static char gTitleBuf[2][40];
+static UInt8 gTitleIdx = 0;
+
 typedef struct {
     UInt32 date;
     char hi[16];
@@ -92,6 +100,11 @@ typedef struct {
     char windSpeed[16];
     Int16 windDeg;
     UInt8 code;
+    char todayHi[16];
+    char todayLo[16];
+    Int32 utcOffset; /* seconds east of UTC, may be negative */
+    UInt32 sunrise;  /* unix seconds UTC, 0 = unknown */
+    UInt32 sunset;
     DayInfo day[5];
 } WeatherData;
 
@@ -117,18 +130,6 @@ static void ShowError(const char *what, const char *reason)
     StrNCopy(err4, hex + 4, 4);
     err4[4] = '\0';
     FrmCustomAlert(GeneralAlert, what, reason ? reason : "", err4);
-}
-
-static void DrawTextLine(const char *text, Coord x, Coord y, Coord width)
-{
-    RectangleType r;
-
-    r.topLeft.x = x;
-    r.topLeft.y = y;
-    r.extent.x = width;
-    r.extent.y = FntLineHeight();
-    WinEraseRectangle(&r, 0);
-    WinDrawChars(text, StrLen(text), x, y);
 }
 
 static void FieldSetEditText(FieldType *fld, const char *init, UInt16 cap)
@@ -236,11 +237,6 @@ static UInt8 IconClass(UInt8 code)
     }
 }
 
-static const char *const kShortCond[9] = {
-    "Sunny", "Sunny", "P.Cloudy", "Cloudy", "Drizzle",
-    "Rain", "T-Storm", "Snow", "Fog"
-};
-
 static const char *const kWindDeg[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
 static const char *const kDayNames[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
@@ -293,7 +289,7 @@ static Boolean GeocodeCity(const char *city)
      * across repeated runs. See host/fnlib_host.c's test_weather(). */
     StrCopy(url, "N:http://geocoding-api.open-meteo.com/v1/search?name=");
     AppendUrlEncoded(url, sizeof(url), city);
-    StrNCat(url, "&count=1&language=en&format=json", (Int16)(sizeof(url) - 1 - StrLen(url)));
+    StrNCat(url, "&count=1&language=en&format=json", (Int16)sizeof(url));
 
     if (fnapp_json_open(url) != FN_ERR_OK) {
         return false;
@@ -322,15 +318,16 @@ static Boolean GeocodeCity(const char *city)
  * repro). So unlike ISS/News (whose URLs are all well under 100 bytes),
  * Weather's Open-Meteo forecast query -- which needs many fields -- MUST
  * be split into several short requests, each safely under ~230 bytes even
- * with worst-case (9-byte) lat/lon strings. This mirrors why the original
+ * with worst-case (9-byte) lat/lon strings (the longest, request 3 with
+ * &timezone=auto, is ~210 bytes). This mirrors why the original
  * fujinet-weather MS-DOS client (msdos/src/openmeteo.c) also splits its
  * queries into several small requests rather than one big one. */
 static void BuildBaseUrl(char *url, UInt16 cap)
 {
     StrCopy(url, "N:http://api.open-meteo.com/v1/forecast?latitude=");
-    StrNCat(url, gLoc.lat, (Int16)(cap - 1 - StrLen(url)));
-    StrNCat(url, "&longitude=", (Int16)(cap - 1 - StrLen(url)));
-    StrNCat(url, gLoc.lon, (Int16)(cap - 1 - StrLen(url)));
+    StrNCat(url, gLoc.lat, (Int16)cap);
+    StrNCat(url, "&longitude=", (Int16)cap);
+    StrNCat(url, gLoc.lon, (Int16)cap);
 }
 
 static Boolean GetWeather(void)
@@ -343,11 +340,11 @@ static Boolean GetWeather(void)
     /* Request 1: current temp/feels-like/wind (unit-dependent fields). */
     BuildBaseUrl(url, sizeof(url));
     StrNCat(url, "&current=temperature_2m,apparent_temperature,wind_speed_10m,"
-                 "wind_direction_10m&temperature_unit=", (Int16)(sizeof(url) - 1 - StrLen(url)));
-    StrNCat(url, gPref.isF ? "fahrenheit" : "celsius", (Int16)(sizeof(url) - 1 - StrLen(url)));
-    StrNCat(url, "&wind_speed_unit=", (Int16)(sizeof(url) - 1 - StrLen(url)));
-    StrNCat(url, gPref.isF ? "mph" : "kmh", (Int16)(sizeof(url) - 1 - StrLen(url)));
-    StrNCat(url, "&timeformat=unixtime", (Int16)(sizeof(url) - 1 - StrLen(url)));
+                 "wind_direction_10m&temperature_unit=", (Int16)sizeof(url));
+    StrNCat(url, gPref.isF ? "fahrenheit" : "celsius", (Int16)sizeof(url));
+    StrNCat(url, "&wind_speed_unit=", (Int16)sizeof(url));
+    StrNCat(url, gPref.isF ? "mph" : "kmh", (Int16)sizeof(url));
+    StrNCat(url, "&timeformat=unixtime", (Int16)sizeof(url));
 
     if (fnapp_json_open(url) != FN_ERR_OK) {
         return false;
@@ -359,10 +356,12 @@ static Boolean GetWeather(void)
     gW.windDeg = (Int16)fnapp_atol(buf);
     fnapp_json_close(url);
 
-    /* Request 2: current humidity/weather code/pressure (unit-independent). */
+    /* Request 2: current humidity/weather code/pressure (unit-independent),
+     * plus today's sunrise/sunset and the location's UTC offset. */
     BuildBaseUrl(url, sizeof(url));
     StrNCat(url, "&current=relative_humidity_2m,weather_code,surface_pressure"
-                 "&timeformat=unixtime", (Int16)(sizeof(url) - 1 - StrLen(url)));
+                 "&daily=sunrise,sunset&forecast_days=1&timezone=auto"
+                 "&timeformat=unixtime", (Int16)sizeof(url));
 
     if (fnapp_json_open(url) != FN_ERR_OK) {
         return false;
@@ -371,18 +370,27 @@ static Boolean GetWeather(void)
     fnapp_json_query(url, "/current/surface_pressure", gW.pressure, sizeof(gW.pressure));
     fnapp_json_query(url, "/current/weather_code", buf, sizeof(buf));
     gW.code = (UInt8)fnapp_atol(buf);
+    fnapp_json_query(url, "/utc_offset_seconds", buf, sizeof(buf));
+    gW.utcOffset = fnapp_atol(buf);
+    fnapp_json_query(url, "/daily/sunrise/0", buf, sizeof(buf));
+    gW.sunrise = (UInt32)fnapp_atol(buf);
+    fnapp_json_query(url, "/daily/sunset/0", buf, sizeof(buf));
+    gW.sunset = (UInt32)fnapp_atol(buf);
     fnapp_json_close(url);
 
-    /* Request 3: 5-day forecast (skip index 0 = today). */
+    /* Request 3: today's hi/lo (index 0) and the 5-day forecast (1..5);
+     * timezone=auto makes daily/time local midnights. */
     BuildBaseUrl(url, sizeof(url));
     StrNCat(url, "&forecast_days=6&daily=temperature_2m_max,temperature_2m_min,"
-                 "weather_code&temperature_unit=", (Int16)(sizeof(url) - 1 - StrLen(url)));
-    StrNCat(url, gPref.isF ? "fahrenheit" : "celsius", (Int16)(sizeof(url) - 1 - StrLen(url)));
-    StrNCat(url, "&timeformat=unixtime", (Int16)(sizeof(url) - 1 - StrLen(url)));
+                 "weather_code&temperature_unit=", (Int16)sizeof(url));
+    StrNCat(url, gPref.isF ? "fahrenheit" : "celsius", (Int16)sizeof(url));
+    StrNCat(url, "&timezone=auto&timeformat=unixtime", (Int16)sizeof(url));
 
     if (fnapp_json_open(url) != FN_ERR_OK) {
         return false;
     }
+    fnapp_json_query(url, "/daily/temperature_2m_max/0", gW.todayHi, sizeof(gW.todayHi));
+    fnapp_json_query(url, "/daily/temperature_2m_min/0", gW.todayLo, sizeof(gW.todayLo));
     for (i = 0; i < 5; i++) {
         StrPrintF(path, "/daily/time/%d", (Int16)(i + 1));
         fnapp_json_query(url, path, buf, sizeof(buf));
@@ -407,91 +415,202 @@ static Boolean GetWeather(void)
 /* Drawing                                                             */
 /* ------------------------------------------------------------------ */
 
-static void WholePartUnit(const char *raw, char *out, UInt16 outCap, const char *unit)
+/* Rounds a decimal string to the nearest integer (halves away from zero).
+ * Never yields a negative zero: the sign only survives if the result != 0. */
+static Int32 RoundFixed(const char *raw)
 {
     FixedPt fp;
+    Int32 mag;
 
     fnapp_parse_fixed(raw, &fp);
-    StrPrintF(out, "%s%ld%s", fp.neg ? "-" : "", (Int32)fp.whole, unit);
+    mag = (Int32)fp.whole + (fp.frac >= 50 ? 1 : 0);
+    return (fp.neg && mag != 0) ? -mag : mag;
+}
+
+static void RoundedUnit(const char *raw, char *out, UInt16 outCap, const char *unit)
+{
+    StrPrintF(out, "%ld%s", RoundFixed(raw), unit);
     out[outCap - 1] = '\0';
+}
+
+static void DrawBitmapRes(UInt16 id, Coord x, Coord y)
+{
+    MemHandle h = DmGetResource(bitmapRsc, id);
+
+    if (h) {
+        BitmapType *bmp = (BitmapType *)MemHandleLock(h);
+
+        WinDrawBitmap(bmp, x, y);
+        MemHandleUnlock(h);
+        DmReleaseResource(h);
+    }
+}
+
+/* Draws text at (x, y), cutting it to the longest prefix that fits maxW. */
+static void DrawTrunc(const char *text, Coord x, Coord y, Coord maxW)
+{
+    Int16 width = maxW;
+    Int16 len = (Int16)StrLen(text);
+    Boolean fits;
+
+    FntCharsInWidth(text, &width, &len, &fits);
+    WinDrawChars(text, len, x, y);
+}
+
+static void DrawCentered(const char *text, Coord cx, Coord y)
+{
+    Int16 w = FntCharsWidth(text, (Int16)StrLen(text));
+
+    WinDrawChars(text, (Int16)StrLen(text), (Coord)(cx - w / 2), y);
+}
+
+static void DrawRight(const char *text, Coord xr, Coord y)
+{
+    Int16 w = FntCharsWidth(text, (Int16)StrLen(text));
+
+    WinDrawChars(text, (Int16)StrLen(text), (Coord)(xr - w), y);
+}
+
+/* Draws a sunrise/sunset glyph at (x, 78) and the local time after it. */
+static void DrawSunCell(UInt16 bitmapId, UInt32 unixSecs, Coord x)
+{
+    char buf[timeStringLength + 1];
+    Int32 t = (Int32)unixSecs + gW.utcOffset;
+    Int32 secs = ((t % 86400L) + 86400L) % 86400L;
+
+    DrawBitmapRes(bitmapId, x, 78);
+    TimeToAscii((UInt8)(secs / 3600L), (UInt8)((secs % 3600L) / 60L),
+                (TimeFormatType)PrefGetPreference(prefTimeFormat), buf);
+    DrawTrunc(buf, (Coord)(x + 14), 77, 62);
+}
+
+/* Sets the MainForm title to the city name, cut (with "...") to fit 112 px
+ * in boldFont. Only call with the MainForm pointer. */
+static void UpdateTitle(FormType *frm)
+{
+    FontID oldFont;
+    Int16 width = 112;
+    Int16 len;
+    Boolean fits;
+    char *title;
+
+    if (!gHaveLoc) {
+        return;
+    }
+    gTitleIdx ^= 1;
+    title = gTitleBuf[gTitleIdx];
+    StrNCopy(title, gLoc.city, (Int16)(sizeof(gTitleBuf[0]) - 1));
+    title[sizeof(gTitleBuf[0]) - 1] = '\0';
+
+    oldFont = FntSetFont(boldFont);
+    len = (Int16)StrLen(title);
+    FntCharsInWidth(title, &width, &len, &fits);
+    if (len < (Int16)StrLen(title)) {
+        /* Cut: leave room for the ellipsis. */
+        while (len > 0 &&
+               FntCharsWidth(title, len) + FntCharsWidth("...", 3) > 112) {
+            len--;
+        }
+        StrCopy(title + len, "...");
+    }
+    FntSetFont(oldFont);
+    FrmSetTitle(frm, title);
 }
 
 static void DrawWeather(void)
 {
     char line[64];
     char temp[16];
-    char feels[16];
+    char hilo[24];
+    char tmp2[16];
+    RectangleType r;
+    FontID oldFont;
+    Int16 tempRight;
+    Int16 hiloW;
+    Int32 spd;
     UInt8 i;
 
     if (!gHaveLoc || !gHaveWeather) {
         return;
     }
 
-    if (gLoc.region[0] != '\0') {
-        StrPrintF(line, "%s, %s", gLoc.city, gLoc.region);
-    } else {
-        StrPrintF(line, "%s, %s", gLoc.city, gLoc.countryCode);
+    r.topLeft.x = 0;
+    r.topLeft.y = 15;
+    r.extent.x = 160;
+    r.extent.y = 131;
+    WinEraseRectangle(&r, 0);
+
+    oldFont = FntSetFont(boldFont);
+
+    /* Large icon, current temperature, today's hi/lo, condition */
+    DrawBitmapRes((UInt16)(LargeIconBase + IconClass(gW.code)), 2, 18);
+
+    StrPrintF(temp, "%ld\260%s", RoundFixed(gW.temp), gPref.isF ? "F" : "C");
+    FntSetFont(largeBoldFont);
+    tempRight = (Int16)(38 + FntCharsWidth(temp, (Int16)StrLen(temp)));
+    WinDrawChars(temp, (Int16)StrLen(temp), 38, 18);
+
+    FntSetFont(stdFont);
+    StrPrintF(hilo, "H %ld\260 L %ld\260", RoundFixed(gW.todayHi), RoundFixed(gW.todayLo));
+    hiloW = FntCharsWidth(hilo, (Int16)StrLen(hilo));
+    if (tempRight + 4 > 158 - hiloW) {
+        StrPrintF(hilo, "%ld\260/%ld\260", RoundFixed(gW.todayHi), RoundFixed(gW.todayLo));
     }
-    DrawTextLine(line, 4, 16, 152);
-
-    WholePartUnit(gW.temp, temp, sizeof(temp), gPref.isF ? "F" : "C");
-    WholePartUnit(gW.feels, feels, sizeof(feels), gPref.isF ? "F" : "C");
-    {
-        RectangleType r;
-        FontID oldFont;
-
-        r.topLeft.x = 4;
-        r.topLeft.y = 28;
-        r.extent.x = 152;
-        r.extent.y = 16;
-        WinEraseRectangle(&r, 0);
-
-        oldFont = FntSetFont(boldFont);
-        WinDrawChars(temp, StrLen(temp), 4, 28);
-        FntSetFont(stdFont);
-        StrPrintF(line, "Feels %s", feels);
-        WinDrawChars(line, StrLen(line), 60, 30);
-        FntSetFont(oldFont);
-    }
+    DrawRight(hilo, 158, 21);
 
     DecodeDescription(gW.code, line, sizeof(line));
-    DrawTextLine(line, 4, 44, 152);
+    DrawTrunc(line, 38, 35, 120);
 
-    {
-        char wind[16];
+    /* Details, two columns */
+    RoundedUnit(gW.feels, tmp2, sizeof(tmp2), "\260");
+    StrPrintF(line, "Feels %s", tmp2);
+    DrawTrunc(line, 2, 55, 76);
+
+    RoundedUnit(gW.humidity, tmp2, sizeof(tmp2), "%");
+    StrPrintF(line, "Humidity %s", tmp2);
+    DrawTrunc(line, 82, 55, 76);
+
+    spd = RoundFixed(gW.windSpeed);
+    if (spd == 0) {
+        StrCopy(line, "Wind calm");
+    } else {
         Int16 idx = (Int16)((((gW.windDeg % 360) + 360) % 360) / 45);
 
-        WholePartUnit(gW.windSpeed, wind, sizeof(wind), gPref.isF ? "mph" : "kmh");
-        StrPrintF(line, "Wind: %s %s", wind, kWindDeg[idx]);
-        DrawTextLine(line, 4, 56, 152);
+        StrPrintF(line, "Wind %ld %s %s", spd, gPref.isF ? "mph" : "km/h", kWindDeg[idx]);
+    }
+    DrawTrunc(line, 2, 66, 76);
+
+    RoundedUnit(gW.pressure, tmp2, sizeof(tmp2), " hPa");
+    DrawTrunc(tmp2, 82, 66, 76);
+
+    if (gW.sunrise != 0) {
+        DrawSunCell(SunriseBitmap, gW.sunrise, 2);
+        if (gW.sunset != 0) {
+            DrawSunCell(SunsetBitmap, gW.sunset, 82);
+        }
     }
 
-    {
-        char humidity[16];
+    /* Rule */
+    WinDrawGrayLine(2, 91, 157, 91);
 
-        WholePartUnit(gW.humidity, humidity, sizeof(humidity), "%");
-        StrPrintF(line, "Humidity: %s", humidity);
-        DrawTextLine(line, 4, 68, 152);
-    }
-
-    {
-        char pressure[16];
-
-        WholePartUnit(gW.pressure, pressure, sizeof(pressure), " hPa");
-        StrPrintF(line, "Pressure: %s", pressure);
-        DrawTextLine(line, 4, 80, 152);
-    }
-
+    /* 5-day forecast */
     for (i = 0; i < 5; i++) {
-        char hi[16], lo[16];
-        Coord y = (Coord)(94 + i * 9);
+        Coord cx = (Coord)(i * 32 + 16);
+        UInt32 local = gW.day[i].date + (UInt32)gW.utcOffset; /* wraps correctly */
+        char t[16];
 
-        WholePartUnit(gW.day[i].hi, hi, sizeof(hi), "");
-        WholePartUnit(gW.day[i].lo, lo, sizeof(lo), "");
-        StrPrintF(line, "%s  %-8s %s/%s", kDayNames[WeekdayFromEpoch(gW.day[i].date)],
-                  kShortCond[IconClass(gW.day[i].code)], hi, lo);
-        DrawTextLine(line, 4, y, 152);
+        FntSetFont(boldFont);
+        DrawCentered(kDayNames[WeekdayFromEpoch(local)], cx, 95);
+        DrawBitmapRes((UInt16)(SmallIconBase + IconClass(gW.day[i].code)),
+                      (Coord)(i * 32 + 8), 108);
+        RoundedUnit(gW.day[i].hi, t, sizeof(t), "\260");
+        DrawCentered(t, cx, 125);
+        FntSetFont(stdFont);
+        RoundedUnit(gW.day[i].lo, t, sizeof(t), "\260");
+        DrawCentered(t, cx, 135);
     }
+
+    FntSetFont(oldFont);
 }
 
 static void SyncUnitButtons(FormType *frm)
@@ -539,6 +658,7 @@ static void FullRefresh(FormType *frm)
     }
     gHaveWeather = true;
     if (frm != 0) {
+        UpdateTitle(frm);
         DrawWeather();
     }
 }
@@ -572,6 +692,7 @@ static Boolean MainFormHandleEvent(EventType *e)
         FrmDrawForm(frm);
         SyncUnitButtons(frm);
         FullRefresh(frm);
+        SyncUnitButtons(frm); /* first run picks C/F from the country */
         return true;
     }
 
@@ -580,6 +701,7 @@ static Boolean MainFormHandleEvent(EventType *e)
 
         FrmDrawForm(frm);
         SyncUnitButtons(frm);
+        UpdateTitle(frm);
         DrawWeather();
         return true;
     }

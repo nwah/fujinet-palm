@@ -16,7 +16,7 @@ weather: weather.c weather_rsc.h $(COMMON)/fnapp.c $(COMMON)/fnapp.h $(LIBDIR)/l
 $(LIBDIR)/libfujinet.palmos.a:
 	$(MAKE) -C $(FNLIB) palmos
 
-bin.stamp: weather.rcp weather_rsc.h
+bin.stamp: weather.rcp weather_rsc.h icons/*.pbitm
 	pilrc -q weather.rcp
 	touch $@
 

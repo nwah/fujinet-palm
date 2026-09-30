@@ -1,28 +1,51 @@
 #include "weather_rsc.h"
 
+/* Monochrome icons after the Apple II FujiNet Weather tiles; the
+ * .pbitm sources in icons/ are plain text ('#' = black). */
+BITMAP ID 1100 "icons/wx_sun_l.pbitm"
+BITMAP ID 1101 "icons/wx_mostlysunny_l.pbitm"
+BITMAP ID 1102 "icons/wx_partlycloudy_l.pbitm"
+BITMAP ID 1103 "icons/wx_cloudy_l.pbitm"
+BITMAP ID 1104 "icons/wx_drizzle_l.pbitm"
+BITMAP ID 1105 "icons/wx_rain_l.pbitm"
+BITMAP ID 1106 "icons/wx_thunder_l.pbitm"
+BITMAP ID 1107 "icons/wx_snow_l.pbitm"
+BITMAP ID 1108 "icons/wx_fog_l.pbitm"
+BITMAP ID 1200 "icons/wx_sun_s.pbitm"
+BITMAP ID 1201 "icons/wx_mostlysunny_s.pbitm"
+BITMAP ID 1202 "icons/wx_partlycloudy_s.pbitm"
+BITMAP ID 1203 "icons/wx_cloudy_s.pbitm"
+BITMAP ID 1204 "icons/wx_drizzle_s.pbitm"
+BITMAP ID 1205 "icons/wx_rain_s.pbitm"
+BITMAP ID 1206 "icons/wx_thunder_s.pbitm"
+BITMAP ID 1207 "icons/wx_snow_s.pbitm"
+BITMAP ID 1208 "icons/wx_fog_s.pbitm"
+BITMAP ID SunriseBitmap "icons/wx_sunrise.pbitm"
+BITMAP ID SunsetBitmap  "icons/wx_sunset.pbitm"
+
 FORM ID MainForm AT (0 0 160 160)
 NOFRAME
 BEGIN
     TITLE "Weather"
 
-    /* Everything below the title is drawn manually with WinDrawChars in
-     * C (city line, temp, condition, wind/humidity/pressure, the 5-day
-     * list) -- it all changes on refresh, so no LABEL objects, following
-     * fujiconfig.c's DrawMainStatus / mastodon.c's DrawHeader pattern.
-     * Layout the C code uses (top-left y of each line):
-     *   y=16  city/region line
-     *   y=28  current temp (boldFont, large) + "Feels NNF" to its right
-     *   y=44  condition text
-     *   y=56  wind line
-     *   y=68  humidity line
-     *   y=80  pressure line
-     *   y=92..134  5-day forecast, ~9px per row
+    /* The title is the city name (FrmSetTitle in C); CityButton sits at
+     * the right of the title bar. Everything below the title is drawn in
+     * C (it all changes on refresh), following fujiconfig.c's
+     * DrawMainStatus pattern. Text is always native fonts; only the
+     * condition icons are bitmaps. Layout (top-left y):
+     *   y=18..49  32x32 icon at x=2; temp (largeBoldFont) at x=38, today's
+     *             hi/lo right-aligned at y=21; condition text at x=38,y=35
+     *   y=55,66   two columns of details: feels/humidity, wind/pressure
+     *   y=77      sunrise / sunset glyphs and times
+     *   y=91      rule
+     *   y=95..145 5 forecast columns, 32 px each: day, 16x16 icon, hi, lo
      */
 
-    PUSHBUTTON "C" ID UnitCButton AT (4  140 20 14) GROUP 1 FONT 0
-    PUSHBUTTON "F" ID UnitFButton AT (25 140 20 14) GROUP 1 FONT 0
-    BUTTON "City"    ID CityButton    AT (50  140 46 14) FONT 0
-    BUTTON "Refresh" ID RefreshButton AT (100 140 56 14) FONT 0
+    BUTTON "Change" ID CityButton AT (122 1 36 11) FONT 0
+
+    PUSHBUTTON "C" ID UnitCButton AT (1  147 18 12) GROUP 1 FONT 0
+    PUSHBUTTON "F" ID UnitFButton AT (20 147 18 12) GROUP 1 FONT 0
+    BUTTON "Refresh" ID RefreshButton AT (111 147 48 12) FONT 0
 END
 
 FORM ID CityDialog AT (6 50 148 60)

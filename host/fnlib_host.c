@@ -721,7 +721,8 @@ static int test_weather(void)
     /* Request 2: current humidity/weather code/pressure (unit-independent). */
     snprintf(url, sizeof(url),
              "N:http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
-             "&current=relative_humidity_2m,weather_code,surface_pressure&timeformat=unixtime",
+             "&current=relative_humidity_2m,weather_code,surface_pressure"
+             "&daily=sunrise,sunset&forecast_days=1&timezone=auto&timeformat=unixtime",
              lat, lon);
     if (network_open(url, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
       fprintf(stderr, "test_weather: network_open(forecast req2) failed\n");
@@ -735,13 +736,22 @@ static int test_weather(void)
     n = network_json_query(url, "/current/weather_code", buf);
     if (n <= 0) { fprintf(stderr, "test_weather: /current/weather_code failed/empty\n"); rc = 1; }
     else printf("weather /current/weather_code: %.*s\n", (int) n, buf);
+    n = network_json_query(url, "/utc_offset_seconds", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /utc_offset_seconds failed/empty\n"); rc = 1; }
+    else printf("weather /utc_offset_seconds: %.*s\n", (int) n, buf);
+    n = network_json_query(url, "/daily/sunrise/0", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /daily/sunrise/0 failed/empty\n"); rc = 1; }
+    else printf("weather /daily/sunrise/0: %.*s\n", (int) n, buf);
+    n = network_json_query(url, "/daily/sunset/0", buf);
+    if (n <= 0) { fprintf(stderr, "test_weather: /daily/sunset/0 failed/empty\n"); rc = 1; }
+    else printf("weather /daily/sunset/0: %.*s\n", (int) n, buf);
     network_close(url);
 
     /* Request 3: 5-day forecast. */
     snprintf(url, sizeof(url),
              "N:http://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s"
              "&forecast_days=6&daily=temperature_2m_max,temperature_2m_min,weather_code"
-             "&temperature_unit=fahrenheit&timeformat=unixtime",
+             "&temperature_unit=fahrenheit&timezone=auto&timeformat=unixtime",
              lat, lon);
     if (network_open(url, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE) != FN_ERR_OK) {
       fprintf(stderr, "test_weather: network_open(forecast req3) failed\n");
