@@ -1,5 +1,7 @@
 # FujiNet for Palm OS
 
+<h2> ⚠️ WARNING: still very early WIP; anything here subject to change ⚠️</h2>
+
 FujiNet support for Palm OS 3.x handhelds, developed on a Handspring Visor
 Deluxe (Palm OS 3.1H, DragonBall EZ). The Palm talks FujiBus (the SLIP-framed
 FujiNet protocol, see [docs/protocol.md](docs/protocol.md)) over a serial
