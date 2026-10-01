@@ -121,7 +121,7 @@ static Boolean FindShim(UInt16 *refP, Boolean load)
 
     if (err != errNone && load) {
         err = SysLibLoad(fnNLDbType, fnNLCreator, refP);
-        LogErr("SysLibLoad FnNL", err);
+        LogErr("SysLibLoad FNNL", err);
     }
     return (Boolean)(err == errNone);
 }

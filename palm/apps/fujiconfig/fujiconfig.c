@@ -1026,7 +1026,7 @@ static Boolean ListDirectory(UInt8 hostSlot, const char *path)
 /* Browse entries in the BrowseGrid gadget, scrolled a row at a time,
  * either as a grid of icon-over-label cells or as a list of small icons
  * with full-width names. The choice is kept as unsaved preference
- * ('FjNt', BROWSE_VIEW_PREF_ID). */
+ * ('FNCF', BROWSE_VIEW_PREF_ID). */
 #define BROWSE_VIEW_PREF_ID 4
 static Boolean gBrowseAsList = false;
 

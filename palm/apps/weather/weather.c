@@ -29,7 +29,7 @@
 /* Prefs                                                               */
 /* ------------------------------------------------------------------ */
 
-#define WEATHER_PREF_CREATOR 'FnWx'
+#define WEATHER_PREF_CREATOR 'NBFW'
 #define WEATHER_PREF_ID 0
 #define WEATHER_PREF_VERSION 1
 

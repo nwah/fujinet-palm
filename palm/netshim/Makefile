@@ -1,5 +1,5 @@
 # Makefile for fnnetlib.prc: the "FujiNet NetLib" system library ('libr',
-# creator 'FnNL') that splices a FujiBus-backed emulation table into the
+# creator 'FNNL') that splices a FujiBus-backed emulation table into the
 # ROM Net.lib so existing NetLib apps work unmodified over a FujiNet link.
 #
 # Built as a system library via `build-prc -L`, which (verified separately,
@@ -28,7 +28,7 @@ OBJS = entry.o fnnl_glob.o fnnl_own.o fnnl_net.o fnnl_sock.o fnnl_io.o \
 HDRS = fnnetlib.h fnnl_priv.h
 
 fnnetlib.prc: fnnetlib
-	build-prc -L -c FnNL -n "FujiNet NetLib" -o $@ fnnetlib
+	build-prc -L -c FNNL -n "FujiNet NetLib" -o $@ fnnetlib
 
 fnnetlib: $(OBJS)
 	$(CC) -nostartfiles -o $@ $(OBJS)

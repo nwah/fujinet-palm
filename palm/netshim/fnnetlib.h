@@ -1,10 +1,10 @@
 /* palm/netshim/fnnetlib.h
  *
  * Public interface to the "FujiNet NetLib" system library (fnnetlib.prc,
- * type 'libr', creator 'FnNL'). This library does two things:
+ * type 'libr', creator 'FNNL'). This library does two things:
  *
  *  1. Under its OWN name ("FujiNet NetLib", found via SysLibFind/SysLibLoad
- *     with creator 'FnNL'), it exposes three custom control calls
+ *     with creator 'FNNL'), it exposes three custom control calls
  *     (FnNLInstall/FnNLRemove/FnNLGetStatus) used by FujiConfig/NetTest to
  *     turn the shim on and off and inspect its state.
  *
@@ -39,7 +39,7 @@ extern "C" {
 
 /* Type/creator of the fnnetlib.prc database itself. */
 #define fnNLDbType   'libr'
-#define fnNLCreator  'FnNL'
+#define fnNLCreator  'FNNL'
 
 /* Name this library answers to via SysLibFind (our own control calls, NOT
  * the emulated "Net.lib" name -- see fnnl_net.c's own table). */

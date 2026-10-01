@@ -45,7 +45,7 @@ start:
 
 |===========================================================================
 | Table A: our own dispatch table, found via SysLibFind("FujiNet NetLib")
-| or SysLibLoad('libr','FnNL',&ref). Standard Open/Close/Sleep/Wake are
+| or SysLibLoad('libr','FNNL',&ref). Standard Open/Close/Sleep/Wake are
 | harmless no-ops (FnNLInstall/FnNLRemove do the real work); the three
 | custom traps are this library's actual public API (see fnnetlib.h).
 |===========================================================================
@@ -71,7 +71,7 @@ fnnl_own_name:
 | existing app's SysLibFind("Net.lib")/NetLibOpen()/NetLibXxx() calls land
 | here instead of in the ROM's PPP stack, under NET.LIB'S OWN REFNUM (never
 | this library's) -- every FnNLB_* function below reaches shim state via
-| FtrGet('FnNL',0,...), never via a globalsP, since the globalsP that comes
+| FtrGet('FNNL',0,...), never via a globalsP, since the globalsP that comes
 | with THIS refNum still belongs to the untouched ROM code (see fnnl_bits.c,
 | which chains straight through to it for the Bit* utilities).
 |

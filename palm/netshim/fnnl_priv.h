@@ -125,7 +125,7 @@ Boolean FnNLParseDotted(const Char *s, NetIPAddr *outP);
  * dotted-quad form. Writes into buf (>= 64 bytes). */
 void FnNLAddrToHostStr(FnNLGlobals *g, NetIPAddr addr, Char *buf);
 
-/* Reads the shared "FujiNet link" unsaved preference (creator 'FjNt', id 0;
+/* Reads the shared "FujiNet link" unsaved preference (creator 'FNCF', id 0;
  * see palm/apps/fujiconfig and ../fujinet-lib-palmos's
  * include/fujinet-palmos.h for the format this must match byte-for-byte)
  * and fills *libNameP (a buffer of at least 32 bytes) / *baudP. Falls back

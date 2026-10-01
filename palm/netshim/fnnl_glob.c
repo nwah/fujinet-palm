@@ -9,7 +9,7 @@
  */
 #include "fnnl_priv.h"
 
-#define FUJI_PALMOS_PREF_CREATOR ((UInt32)'FjNt')
+#define FUJI_PALMOS_PREF_CREATOR ((UInt32)'FNCF')
 #define FUJI_PALMOS_PREF_ID      0
 #define FUJI_PALMOS_PREF_VERSION 1
 
